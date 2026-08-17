@@ -1,0 +1,33 @@
+name: Resolve database checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Initialize local Supabase config
+        run: supabase init
+
+      - name: Start local database and apply migrations
+        run: supabase db start
+
+      - name: Lint database
+        run: supabase db lint --level warning
+
+      - name: Run pgTAP database tests
+        run: supabase test db
