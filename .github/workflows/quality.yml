@@ -21,13 +21,13 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
 
       - name: Typecheck, test, and build
         run: npm run check
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Demo browser smoke tests
+        run: npm run test:browser

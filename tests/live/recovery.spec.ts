@@ -1,0 +1,97 @@
+import { test, expect } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+const local = JSON.parse(execFileSync('npx', ['supabase', 'status', '-o', 'json'], { encoding: 'utf8' }));
+if (!['localhost', '127.0.0.1'].includes(new URL(local.API_URL).hostname)) throw new Error('Local stack required');
+const db = createClient(local.API_URL, local.SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+const org = randomUUID(), category = randomUUID(), tree = randomUUID(), node = randomUUID(), dx = randomUUID();
+const email = `${org}@resolve.test`, password = `Test-${randomUUID()}!`;
+let user: string;
+const ok = (r: any) => { expect(r.error).toBeNull(); return r.data; };
+test.beforeAll(async () => {
+  ok(await db.from('organizations').insert({ id: org, name: 'Browser test', slug: org }));
+  user = ok(await db.auth.admin.createUser({ email, password, email_confirm: true })).user.id;
+  ok(await db.from('users').update({ org_id: org, role: 'admin' }).eq('id', user));
+  ok(await db.from('diagnostic_categories').insert({ id: category, org_id: org, slug: 'connection', label: 'Connection', short_label: 'Connection' }));
+  ok(await db.from('diagnoses').insert({ id: dx, org_id: org, key: 'connection', title: 'Check your connection.', short_label: 'Connection', node_label: 'Connection' }));
+  ok(await db.from('troubleshooting_steps').insert({ diagnosis_id: dx, position: 1, title: 'Reconnect', detail: 'Reconnect the cable.' }));
+  ok(await db.from('diagnostic_trees').insert({ id: tree, category_id: category, version: 1, root_label: 'Connection' }));
+  ok(await db.from('diagnostic_nodes').insert({ id: node, tree_id: tree, key: 'root', question: 'Is the cable connected?', fact_label: 'Cable', short_label: 'Cable' }));
+  ok(await db.from('diagnostic_options').insert({ node_id: node, label: 'Yes', fact_value: 'Connected', diagnosis_id: dx }));
+  ok(await db.from('diagnostic_trees').update({ root_node_id: node, status: 'published' }).eq('id', tree));
+});
+test.afterAll(async () => {
+  ok(await db.from('tickets').delete().eq('org_id', org));
+  ok(await db.from('diagnostic_sessions').delete().eq('org_id', org));
+  ok(await db.from('diagnostic_trees').update({ root_node_id: null }).eq('id', tree));
+  ok(await db.from('diagnostic_trees').delete().eq('id', tree));
+  if (user) ok(await db.auth.admin.deleteUser(user));
+  ok(await db.from('organizations').delete().eq('id', org));
+});
+test.beforeEach(async ({ page }) => {
+  page.on('pageerror', error => { throw error; });
+  await page.goto('./');
+  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: "What's going wrong?" })).toBeVisible();
+});
+test('refresh restores database state during questions, fixes and before escalation', async ({ page }) => {
+  await page.getByRole('button', { name: 'Connection', exact: true }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).dblclick();
+  await expect(page.getByText('Is the cable connected?')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Is the cable connected?')).toBeVisible();
+  await page.goto('about:blank');
+  await page.goBack();
+  await expect(page.getByText('Is the cable connected?')).toBeVisible();
+  await page.route('**/rest/v1/rpc/answer_question', async route => {
+    await route.fetch(); // The write committed, but the caller loses its response.
+    await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+  }, { times: 1 });
+  await page.getByRole('button', { name: 'Yes', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload saved progress' }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Try this' })).toBeVisible();
+  await page.getByRole('button', { name: 'Try this' }).click();
+  await page.getByRole('button', { name: 'Still not working' }).click();
+  await expect(page.getByRole('button', { name: 'Send to IT', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Send to IT', exact: true })).toBeVisible();
+  const sessionId = await page.evaluate(() => localStorage.getItem('resolve.activeSessionId'));
+  await page.getByRole('button', { name: 'Send to IT', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'On its way.' })).toBeVisible();
+  expect(ok(await db.from('session_answers').select('*').eq('session_id', sessionId)).length).toBe(1);
+  await page.getByRole('button', { name: 'See it in the IT desk' }).click();
+  await page.getByRole('button', { name: /^Open RSV/ }).click();
+  await expect(page.getByRole('dialog').getByText('Connected', { exact: true })).toBeVisible();
+  await page.route('**/rest/v1/rpc/add_ticket_note', route => route.fulfill({ status: 503, body: '{}' }), { times: 1 });
+  await page.getByLabel('Add an internal note').fill('Keep this note if saving fails.');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await expect(page.getByLabel('Add an internal note')).toHaveValue('Keep this note if saving fails.');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.locator('.notes p')).toContainText('Keep this note if saving fails.');
+});
+test('stale session offers recovery and failed queue load offers retry', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('resolve.activeSessionId', '00000000-0000-0000-0000-000000000001'));
+  await page.reload();
+  await expect(page.getByText("We couldn't restore your support session.", { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Start a new request' }).click();
+  let fail = true;
+  await page.route('**/rest/v1/rpc/queue_stats', route => fail ? route.fulfill({ status: 503, body: '{}' }) : route.continue());
+  await page.getByRole('button', { name: 'IT desk', exact: true }).click();
+  await expect(page.getByText("We couldn't load the support queue. Try again.")).toBeVisible();
+  await expect(page.getByText('Loading the queue…')).toHaveCount(0);
+  fail = false;
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
+});
+test('expired authorization returns to sign-in without exposing backend details', async ({ page }) => {
+  await page.route('**/rest/v1/rpc/start_session', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST301', message: 'Internal JWT parser detail' }) }));
+  await page.getByRole('button', { name: 'Connection', exact: true }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(page.getByLabel('Work email')).toBeVisible();
+  await expect(page.getByText('Internal JWT parser detail')).toHaveCount(0);
+});

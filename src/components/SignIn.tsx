@@ -12,8 +12,28 @@ export function SignIn({
   onSubmit: (email: string, password: string) => void;
   busy: boolean;
 }) {
-  const [email, setEmail] = useState(usingLiveBackend ? "" : "maya@northgate.test");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  if (!usingLiveBackend) return (
+    <div className="landing"><div className="landing-col signin">
+      <p className="greeting">A guided path from problem to resolution.</p>
+      <h1 className="display">Explore Resolve as</h1>
+      <div className="persona-list">
+        {[
+          ["Requester", "maya", "Describe a problem and try a guided fix."],
+          ["IT Technician", "jordan", "Review tickets with the diagnostic history attached."],
+          ["Administrator", "sam", "Edit and publish a version of the questions."],
+        ].map(([role, name, detail]) => (
+          <button className="persona" key={name} disabled={busy}
+            onClick={() => onSubmit(`${name}@northgate.test`, "")}>
+            <strong>{role}</strong><span>{detail}</span>
+          </button>
+        ))}
+      </div>
+      <p className="hint">Demo data resets when you reload. Switch roles from the header.</p>
+    </div></div>
+  );
 
   return (
     <div className="landing">
@@ -32,7 +52,7 @@ export function SignIn({
           style={{ animationDelay: "150ms" }}
           onSubmit={(e) => {
             e.preventDefault();
-            if (!busy && email.trim() && (!usingLiveBackend || password)) {
+            if (!busy && email.trim() && password) {
               onSubmit(email.trim(), password);
             }
           }}
@@ -46,7 +66,6 @@ export function SignIn({
             />
           </label>
 
-          {usingLiveBackend ? (
             <label className="field">
               <span className="label">Password</span>
               <input
@@ -54,30 +73,17 @@ export function SignIn({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-          ) : null}
 
           <button
             className="btn btn-primary btn-lg"
-            disabled={busy || !email.trim() || (usingLiveBackend && !password)}
+            disabled={busy || !email.trim() || !password}
             type="submit"
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
 
-        {usingLiveBackend ? null : (
-          <div className="demo-note rise" style={{ animationDelay: "200ms" }}>
-            <p className="label">Demo accounts</p>
-            <ul className="demo-list">
-              <li><code>maya@northgate.test</code> — reports a problem</li>
-              <li><code>jordan@northgate.test</code> — runs the IT desk</li>
-              <li><code>sam@northgate.test</code> — edits the questions</li>
-            </ul>
-            <p className="hint">
-              No password needed here. Connect Supabase and this becomes a real sign-in.
-            </p>
-          </div>
-        )}
+
       </div>
     </div>
   );

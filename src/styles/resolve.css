@@ -23,7 +23,7 @@ button, input, select, textarea { font: inherit; }
   --card:       #FFFFFF;
   --ink:        #16211D;
   --ink-2:      #5B6A64;
-  --ink-3:      #8C9992;
+  --ink-3:      #5F6D66;
   --rule:       #DCE1DA;
   --rule-soft:  #E7EBE4;
   --green:      #1E5C4A;
@@ -47,7 +47,7 @@ button, input, select, textarea { font: inherit; }
 }
 
 .rsv *, .rsv *::before, .rsv *::after { box-sizing: border-box; }
-.rsv button, .rsv input, .rsv select, .rsv textarea { font: inherit; color: inherit; }
+.rsv :where(button, input, select, textarea) { font: inherit; color: inherit; }
 .rsv :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 4px; }
 .rsv p, .rsv h1, .rsv h2, .rsv ul, .rsv ol, .rsv dl, .rsv pre { margin: 0; }
 .rsv ul, .rsv ol { padding: 0; list-style: none; }
@@ -161,7 +161,7 @@ button, input, select, textarea { font: inherit; }
   font-family: var(--serif); font-size: 20px; line-height: 1.45;
 }
 .writebox textarea:focus { outline: none; }
-.writebox textarea::placeholder { color: #A9B3AC; }
+.writebox textarea::placeholder { color: var(--ink-3); }
 
 .cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
 .cat {
@@ -644,3 +644,24 @@ button, input, select, textarea { font: inherit; }
   padding: 36px 32px;
 }
 .panel-loading .btn { margin-top: 6px; }
+
+/* Review polish: keep focus visible even on controls with local focus rules. */
+.rsv :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.persona-list { display: grid; gap: 12px; margin: 28px 0 18px; }
+.persona { text-align: left; padding: 20px; border: 1px solid var(--rule); border-radius: 12px; background: var(--card); cursor: pointer; display: grid; gap: 6px; }
+.persona span { color: var(--ink-2); }
+.persona:hover { border-color: var(--green); }
+.demo-flag { position: static; text-align: center; padding: 16px; margin: 0; background: transparent; border: 0; border-radius: 0; }
+.noterow textarea { min-width: 0; flex: 1; resize: vertical; border: 1px solid var(--rule); border-radius: 8px; padding: 10px; }
+.notes p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.editor-pick, .row, .cta { flex-wrap: wrap; }
+.editor-main, .nodecard, .editor-side { min-width: 0; }
+.answers li > * { min-width: 0; }
+.answers .answer-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+.btn, .switch button { min-height: 40px; }
+.rsv :is(p, h1, h2, dd, .outline) { overflow-wrap: anywhere; }
+@media (max-width: 720px) { .masthead { position: static; } .noterow { flex-wrap: wrap; } }
+@media (max-width: 520px) {
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .tile { min-width: 0; padding: 12px; }
+}

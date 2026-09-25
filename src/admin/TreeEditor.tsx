@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Category, DiagnosisSummary, EditableNode, EditableTree } from "@/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Category, DiagnosisSummary, EditableNode, EditableOption, EditableTree } from "@/types";
+import { confirmLeave, hasUnsavedChanges, useUnsavedChanges } from "@/unsaved";
 import { api } from "@/api";
 import { Icon } from "@/components/Icon";
 
@@ -45,6 +46,8 @@ export function TreeEditor({
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const lock = useRef(false);
+  const requestId = useRef(0);
 
   useEffect(() => {
     api.getDiagnosisOptions().then(setDiagnoses).catch((e: Error) => onError(e.message));
@@ -52,19 +55,22 @@ export function TreeEditor({
 
   const openDraft = useCallback(
     (id: string) => {
+      const request = ++requestId.current;
       setLoading(true);
       setTree(null);
       api.openDraft(id)
-        .then(setTree)
-        .catch((e: Error) => onError(e.message))
-        .finally(() => setLoading(false));
+        .then((value) => { if (request === requestId.current) setTree(value); })
+        .catch((e: Error) => { if (request === requestId.current) onError(e.message); })
+        .finally(() => { if (request === requestId.current) setLoading(false); });
     },
     [onError]
   );
 
-  useEffect(() => { if (categoryId) openDraft(categoryId); }, [categoryId, openDraft]);
+  useEffect(() => { if (categoryId) openDraft(categoryId); return () => { requestId.current++; }; }, [categoryId, openDraft]);
 
   async function run(fn: () => Promise<EditableTree>, msg?: string) {
+    if (lock.current) return;
+    lock.current = true;
     setBusy(true);
     try {
       setTree(await fn());
@@ -72,6 +78,7 @@ export function TreeEditor({
     } catch (e) {
       onError((e as Error).message);
     } finally {
+      lock.current = false;
       setBusy(false);
     }
   }
@@ -186,7 +193,7 @@ export function TreeEditor({
         <div className="editor-pick">
           <label className="picker">
             <span>Category</span>
-            <select value={categoryId ?? ""} onChange={(e) => setCategoryId(e.target.value)}>
+            <select value={categoryId ?? ""} disabled={busy || loading} onChange={(e) => { if (confirmLeave()) setCategoryId(e.target.value); }}>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
           </label>
@@ -218,18 +225,18 @@ export function TreeEditor({
                 diagnoses={diagnoses}
                 isRoot={tree.rootNodeId === node.id}
                 isOrphan={orphans.some((o) => o.id === node.id)}
-                busy={busy}
+                busy={busy || tree.status !== "draft"}
                 onSaveNode={(patch) => run(() => api.saveNode(tree.id, { id: node.id, ...patch }))}
-                onDeleteNode={() => run(() => api.deleteNode(tree.id, node.id), "Question removed")}
+                onDeleteNode={() => { if (window.confirm("Remove this question and its answers? Unsaved edits to it will be lost.")) void run(() => api.deleteNode(tree.id, node.id), "Question removed"); }}
                 onSetRoot={() => run(() => api.setRootNode(tree.id, node.id), "Now the first question")}
                 onSaveOption={(option) => run(() => api.saveOption(tree.id, node.id, option))}
-                onDeleteOption={(id) => run(() => api.deleteOption(tree.id, node.id, id), "Answer removed")}
+                onDeleteOption={(id) => { if (window.confirm("Remove this answer branch?")) void run(() => api.deleteOption(tree.id, node.id, id), "Answer removed"); }}
               />
             ))}
 
             <button
               className="btn btn-dashed"
-              disabled={busy}
+              disabled={busy || tree.status !== "draft"}
               onClick={() => run(
                 () => api.saveNode(tree.id, {
                   question: "New question",
@@ -245,7 +252,7 @@ export function TreeEditor({
           <aside className="editor-side">
             <div className="cardlet">
               <p className="label">The flow</p>
-              <pre className="outline">{outline}</pre>
+              <pre className="outline" tabIndex={0} aria-label="Diagnostic flow outline">{outline}</pre>
             </div>
 
             <div className="cardlet">
@@ -282,7 +289,10 @@ export function TreeEditor({
                 <button
                   className="btn btn-primary publish"
                   disabled={busy || !canPublish}
-                  onClick={() => run(() => api.publishTree(tree.id), "Published — this is live now")}
+                  onClick={() => {
+                    if (hasUnsavedChanges()) { onError("Save or discard your edits before publishing."); return; }
+                    if (window.confirm("Publish this version? New sessions will use these questions. Existing sessions keep their original version.")) void run(() => api.publishTree(tree.id), "Published — this is live now");
+                  }}
                 >
                   Publish this version
                 </button>
@@ -330,8 +340,10 @@ function NodeCard({
     draft.factLabel !== node.factLabel ||
     draft.shortLabel !== node.shortLabel;
 
+  useUnsavedChanges(dirty);
+
   return (
-    <article className={`nodecard${isOrphan ? " is-orphan" : ""}`}>
+    <fieldset aria-label={node.shortLabel} disabled={busy} className={`nodecard${isOrphan ? " is-orphan" : ""}`}>
       <div className="nodecard-head">
         <div className="nodecard-tags">
           {isRoot ? <span className="tag tag-root">First question</span> : null}
@@ -359,6 +371,7 @@ function NodeCard({
         <span className="label">Question shown to the user</span>
         <textarea
           rows={2}
+          maxLength={2000}
           value={draft.question}
           onChange={(e) => setDraft({ ...draft, question: e.target.value })}
         />
@@ -368,14 +381,14 @@ function NodeCard({
         <label className="field">
           <span className="label">Row label in "What we know"</span>
           <input
-            value={draft.factLabel}
+            maxLength={200} value={draft.factLabel}
             onChange={(e) => setDraft({ ...draft, factLabel: e.target.value })}
           />
         </label>
         <label className="field">
           <span className="label">Short label on the trail</span>
           <input
-            value={draft.shortLabel}
+            maxLength={200} value={draft.shortLabel}
             onChange={(e) => setDraft({ ...draft, shortLabel: e.target.value })}
           />
         </label>
@@ -400,58 +413,8 @@ function NodeCard({
       <p className="hlabel answers-head">Answers</p>
       <ul className="answers">
         {node.options.map((o) => (
-          <li key={o.id}>
-            <input
-              className="ans-label"
-              defaultValue={o.label}
-              aria-label="Answer text"
-              onBlur={(e) => {
-                if (e.target.value !== o.label) {
-                  onSaveOption({ id: o.id, label: e.target.value, factValue: o.factValue, nextNodeId: o.nextNodeId, diagnosisId: o.diagnosisId });
-                }
-              }}
-            />
-            <input
-              className="ans-fact"
-              defaultValue={o.factValue}
-              aria-label="What this records"
-              onBlur={(e) => {
-                if (e.target.value !== o.factValue) {
-                  onSaveOption({ id: o.id, label: o.label, factValue: e.target.value, nextNodeId: o.nextNodeId, diagnosisId: o.diagnosisId });
-                }
-              }}
-            />
-            <select
-              className="ans-target"
-              value={targetValue(o)}
-              aria-label="Where this answer leads"
-              onChange={(e) => {
-                const t = parseTarget(e.target.value);
-                onSaveOption({
-                  id: o.id, label: o.label, factValue: o.factValue,
-                  nextNodeId: t?.kind === "node" ? t.id : null,
-                  diagnosisId: t?.kind === "dx" ? t.id : null,
-                });
-              }}
-            >
-              <optgroup label="Ask another question">
-                {tree.nodes.filter((n) => n.id !== node.id).map((n) => (
-                  <option key={n.id} value={`node:${n.id}`}>{n.shortLabel}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Conclude with">
-                {diagnoses.map((d) => (
-                  <option key={d.id} value={`dx:${d.id}`}>{d.shortLabel}</option>
-                ))}
-              </optgroup>
-            </select>
-            <button
-              className="btn btn-plain btn-sm" disabled={busy}
-              onClick={() => onDeleteOption(o.id)} aria-label="Remove this answer"
-            >
-              <Icon name="close" size={14} />
-            </button>
-          </li>
+          <OptionDraft key={o.id} option={o} node={node} tree={tree} diagnoses={diagnoses}
+            busy={busy} onSave={onSaveOption} onDelete={() => onDeleteOption(o.id)} />
         ))}
       </ul>
 
@@ -471,6 +434,37 @@ function NodeCard({
       {node.options.length === 0 ? (
         <p className="hint warn">A question with no answers is a dead end. Add at least one.</p>
       ) : null}
-    </article>
+    </fieldset>
   );
+}
+
+
+function OptionDraft({ option, node, tree, diagnoses, busy, onSave, onDelete }: {
+  option: EditableOption; node: EditableNode; tree: EditableTree; diagnoses: DiagnosisSummary[];
+  busy: boolean; onSave: (option: EditableOption) => void; onDelete: () => void;
+}) {
+  const [draft, setDraft] = useState(option);
+  useEffect(() => { setDraft(option); }, [option.label, option.factValue, option.nextNodeId, option.diagnosisId]);
+  const dirty = draft.label !== option.label || draft.factValue !== option.factValue || targetValue(draft) !== targetValue(option);
+  useUnsavedChanges(dirty);
+  return <li>
+    <input className="ans-label" aria-label="Answer text" maxLength={500} value={draft.label}
+      onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
+    <input className="ans-fact" aria-label="What this records" maxLength={1000} value={draft.factValue}
+      onChange={(e) => setDraft({ ...draft, factValue: e.target.value })} />
+    <select className="ans-target" aria-label="Where this answer leads" value={targetValue(draft)}
+      onChange={(e) => { const t = parseTarget(e.target.value); setDraft({ ...draft,
+        nextNodeId: t?.kind === "node" ? t.id : null, diagnosisId: t?.kind === "dx" ? t.id : null }); }}>
+      <optgroup label="Ask another question">{tree.nodes.filter((n) => n.id !== node.id).map((n) =>
+        <option key={n.id} value={`node:${n.id}`}>{n.shortLabel}</option>)}</optgroup>
+      <optgroup label="Conclude with">{diagnoses.map((d) =>
+        <option key={d.id} value={`dx:${d.id}`}>{d.shortLabel}</option>)}</optgroup>
+    </select>
+    <button className="btn btn-plain btn-sm" disabled={busy} onClick={onDelete} aria-label="Remove this answer"><Icon name="close" size={14} /></button>
+    {dirty ? <div className="answer-actions">
+      <button className="btn btn-primary btn-sm" disabled={busy || !draft.label.trim() || !draft.factValue.trim()} onClick={() => onSave(draft)}>Save answer</button>
+      <button className="btn btn-plain btn-sm" disabled={busy} onClick={() => setDraft(option)}>Discard answer</button>
+      <span className="hint" role="status">Unsaved answer</span>
+    </div> : null}
+  </li>;
 }

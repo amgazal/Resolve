@@ -1,16 +1,16 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select no_plan();
 
 select ok(
-  (select 'security_invoker=on' = any(coalesce(reloptions, '{}'::text[]))
+  (select exists (select 1 from pg_options_to_table(reloptions) where option_name = 'security_invoker' and option_value::boolean)
      from pg_class where oid = 'public.session_facts'::regclass),
   'session_facts is a security-invoker view'
 );
 
 select ok(
-  (select 'security_invoker=on' = any(coalesce(reloptions, '{}'::text[]))
+  (select exists (select 1 from pg_options_to_table(reloptions) where option_name = 'security_invoker' and option_value::boolean)
      from pg_class where oid = 'public.ticket_queue'::regclass),
   'ticket_queue is a security-invoker view'
 );
@@ -157,12 +157,9 @@ select ok(
   'resolving a ticket stamps resolved_at'
 );
 
-update tickets set status = 'waiting'
- where id = '00000000-0000-0000-0000-000000000051';
-select ok(
-  (select resolved_at is null from tickets
-    where id = '00000000-0000-0000-0000-000000000051'),
-  'reopening a ticket clears resolved_at'
+select throws_ok(
+  $$update tickets set status = 'waiting' where id = '00000000-0000-0000-0000-000000000051'$$,
+  '22023', 'That status change is not available', 'resolved tickets cannot reopen'
 );
 
 insert into diagnostic_categories
@@ -273,6 +270,18 @@ select throws_ok(
   'Troubleshooting step must belong to the session diagnosis',
   'step attempt history cannot use another diagnosis''s step'
 );
+
+
+select ok(not has_table_privilege('authenticated', 'tickets', 'UPDATE'), 'no direct ticket update grant');
+select ok(not has_table_privilege('authenticated', 'diagnostic_sessions', 'INSERT'), 'no direct session insert grant');
+select ok(not has_table_privilege('authenticated', 'ticket_notes', 'INSERT'), 'no direct note insert grant');
+select ok(not has_function_privilege('anon', 'public.start_session(uuid,text,text,text)', 'EXECUTE'), 'anonymous cannot start sessions');
+select ok(not has_function_privilege('authenticated', 'public.handle_new_auth_user()', 'EXECUTE'), 'signup trigger is not callable');
+select ok(has_function_privilege('authenticated', 'private.auth_org()', 'EXECUTE'), 'policies can invoke private helper');
+select ok(to_regprocedure('public.auth_org()') is null, 'helper is not in exposed schema');
+select ok(not has_column_privilege('authenticated', 'diagnostic_nodes', 'tree_id', 'UPDATE'), 'nodes cannot be relocated');
+select throws_ok($$insert into organizations(name,slug) values (repeat('x',201),'oversized')$$,
+  '23514', 'Text exceeds the allowed length', 'text limits are enforced on writes');
 
 select * from finish();
 rollback;

@@ -31,13 +31,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
 
       - name: Resolve GitHub Pages base path
         shell: bash

@@ -47,7 +47,7 @@ const PEOPLE: Record<string, Profile> = {
   "sam@northgate.test":   { id: "u_sam",    fullName: "Sam Adeyemi",  email: "sam@northgate.test",    role: "admin" },
 };
 
-let current: Profile | null = PEOPLE["maya@northgate.test"]!;
+let current: Profile | null = null;
 
 /* ------------------------------- seeding -------------------------------- */
 
@@ -152,6 +152,11 @@ const editableTree = (treeId: string): EditableTree => {
 /* -------------------------------- helpers ------------------------------- */
 
 const wait = <T,>(v: T): Promise<T> => new Promise((r) => setTimeout(() => r(v), 110));
+function cleanText(value: string, limit: number) {
+  const clean = value.replace(/\r\n/g, "\n").trim();
+  if ([...clean].length > limit) throw new Error(`Text is limited to ${limit.toLocaleString()} characters`);
+  return clean;
+}
 const fail = (msg: string): never => { throw new Error(msg); };
 const me = () => current ?? fail("Sign in to continue");
 const staff = () => { const p = me(); if (p.role === "end_user") fail("The IT desk is for technicians"); return p; };
@@ -278,8 +283,8 @@ export const mockApi: Api = {
     const tree = publishedTree(categoryId) ?? fail("That category has no published questions yet");
     const id = uid("ses");
     sessions[id] = {
-      id, userId: user.id, categoryId, treeId: tree.id, description: description.slice(0, 4000),
-      device, operatingSystem, currentNodeId: tree.rootNodeId, diagnosisId: null,
+      id, userId: user.id, categoryId, treeId: tree.id, description: cleanText(description, 4000),
+      device: cleanText(device, 200), operatingSystem: cleanText(operatingSystem, 200), currentNodeId: tree.rootNodeId, diagnosisId: null,
       status: "in_progress", answers: [], attempts: [],
     };
     return wait(state(id));
@@ -347,6 +352,9 @@ export const mockApi: Api = {
 
   async escalate(sessionId, note) {
     const s = mine(sessions[sessionId] ?? fail("Session not found"));
+    const existing = tickets.find((t) => t.sessionId === sessionId);
+    if (s.status === "escalated" && existing) return wait({ id: existing.id, reference: existing.reference });
+    note = cleanText(note, 2000);
     if (s.status !== "in_progress") fail("This session is no longer active");
     const diagnosisId = s.diagnosisId;
     if (diagnosisId === null) throw new Error("Complete the diagnostic questions before escalating");
@@ -384,6 +392,14 @@ export const mockApi: Api = {
   async updateTicket(id, patch) {
     const who = staff();
     const t = tickets.find((x) => x.id === id) ?? fail("Ticket not found");
+    if (patch.status && patch.status !== t.status &&
+      (t.status === "resolved" || !["assigned", "waiting", "resolved"].includes(patch.status))) {
+      fail("That status change is not available");
+    }
+    if (patch.assignToMe && (t.status === "resolved" || (t.assignee && t.assignee !== who.fullName))) {
+      fail("This ticket cannot be assigned to you");
+    }
+    if (patch.status === "assigned" && !patch.assignToMe && !t.assignee) fail("Assign the ticket first");
     if (patch.status) t!.status = patch.status;
     if (patch.priority) t!.priority = patch.priority;
     if (patch.assignToMe) t!.assignee = who.fullName;
@@ -462,9 +478,9 @@ export const mockApi: Api = {
   async saveNode(treeId, node) {
     admin();
     draftTree(treeId);
-    const question = node.question?.trim() ?? "";
-    const factLabel = node.factLabel?.trim() ?? "";
-    const shortLabel = node.shortLabel?.trim() ?? "";
+    const question = cleanText(node.question ?? "", 2000);
+    const factLabel = cleanText(node.factLabel ?? "", 200);
+    const shortLabel = cleanText(node.shortLabel ?? "", 200);
     if (!question || !factLabel || !shortLabel) {
       fail("Question, fact label, and trail label are all required");
     }
@@ -507,8 +523,8 @@ export const mockApi: Api = {
     if (Boolean(option.nextNodeId) === Boolean(option.diagnosisId)) {
       fail("Every answer must lead to exactly one question or diagnosis");
     }
-    const label = option.label?.trim() ?? "";
-    const factValue = option.factValue?.trim() ?? "";
+    const label = cleanText(option.label ?? "", 500);
+    const factValue = cleanText(option.factValue ?? "", 1000);
     if (!label || !factValue) fail("Answer text and recorded value are required");
     if (option.nextNodeId) nodeInDraft(treeId, option.nextNodeId);
     if (option.id) {

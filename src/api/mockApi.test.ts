@@ -190,3 +190,22 @@ describe.sequential("mock API contract", () => {
     await expect(mockApi.publishTree(draft.id)).rejects.toThrow(/loop/i);
   });
 });
+
+describe.sequential("final workflow guards", () => {
+  it("makes resolution terminal and keeps assignment meaningful", async () => {
+    await signIn("jordan@northgate.test");
+    const ticket = (await mockApi.getTickets()).find((t) => !t.assignee && t.status !== "resolved")!;
+    await mockApi.updateTicket(ticket.id, { status: "assigned", assignToMe: true });
+    await mockApi.updateTicket(ticket.id, { status: "waiting" });
+    await mockApi.updateTicket(ticket.id, { status: "resolved" });
+    for (const status of ["new", "assigned", "waiting", "needs_review"] as const) {
+      await expect(mockApi.updateTicket(ticket.id, { status })).rejects.toThrow(/status change/i);
+    }
+    await expect(mockApi.updateTicket(ticket.id, { assignToMe: true })).rejects.toThrow(/cannot be assigned/i);
+  });
+  it("rejects oversized descriptions rather than truncating them", async () => {
+    await signIn("maya@northgate.test");
+    const category = (await mockApi.getCatalog()).categories[0]!;
+    await expect(mockApi.startSession({ categoryId: category.id, description: "x".repeat(4001), device: "Laptop", operatingSystem: "macOS" })).rejects.toThrow(/4,000/);
+  });
+});

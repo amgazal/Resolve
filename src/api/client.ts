@@ -13,6 +13,7 @@
  *    is something the database observed, not something a client asserted.
  */
 
+import { AUTH_EXPIRED_EVENT } from "./authEvents";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   Api, Catalog, DiagnosisSummary, EditableTree, Profile, QueueStats,
@@ -31,17 +32,33 @@ const supabase: SupabaseClient | null = isConfigured
   ? createClient(url!, publishableKey!, { auth: { persistSession: true, autoRefreshToken: true } })
   : null;
 
+supabase?.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_OUT") window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+});
+
 const db = () => supabase ?? (() => { throw new Error("Supabase is not configured"); })();
 
 /** Postgres speaks in error codes; people need sentences. */
 function readable(error: { message: string; code?: string } | null): never {
+  if (error && ["PGRST301", "PGRST303"].includes(error.code ?? "")) {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  }
   if (!error) throw new Error("Something went wrong");
   const map: Record<string, string> = {
     "42501": "You don't have access to that",
     "23505": "That already exists",
+    "22023": "That change is not available. Check your input and refresh before trying again.",
+    "23514": "Check the text lengths and answer destinations, then try again.",
+    P0002: "That item is no longer available. Refresh and try again.",
+    PGRST116: "That item is no longer available. Refresh and try again.",
+    PGRST303: "Your session expired. Sign in again.",
     PGRST301: "Your session expired. Sign in again.",
   };
-  throw new Error(map[error.code ?? ""] ?? error.message);
+  if (import.meta.env.DEV) console.error("Resolve API request failed", { code: error.code, message: error.message });
+  if (error.code === "23514" && error.message === "Text exceeds the allowed length") {
+    throw new Error("One of the fields is too long. Shorten it and try again.");
+  }
+  throw new Error(map[error.code ?? ""] ?? "We couldn't complete that request. Please try again.");
 }
 
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -67,7 +84,7 @@ export const supabaseApi: Api = {
 
   async signIn(email, password) {
     const { error } = await db().auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("Sign-in failed. Check your email and password, then try again.");
     const profile = await supabaseApi.getProfile();
     if (!profile) {
       await db().auth.signOut();
@@ -78,7 +95,7 @@ export const supabaseApi: Api = {
 
   async signOut() {
     const { error } = await db().auth.signOut();
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("We couldn't sign you out. Please try again.");
   },
 
   /* ------------------------------ catalog ------------------------------- */
@@ -157,19 +174,13 @@ export const supabaseApi: Api = {
     const { data: t, error } = await db().from("ticket_queue").select("*").eq("id", id).single();
     if (error) readable(error);
 
-    const [facts, attempts, notes, session] = await Promise.all([
-      db().from("session_facts").select("label, value").eq("session_id", t.session_id).order("position"),
-      db().from("step_attempts")
-        .select("outcome, step_id, troubleshooting_steps(title, position)")
-        .eq("session_id", t.session_id),
+    const [notes, session] = await Promise.all([
       db().from("ticket_notes")
         .select("body, created_at, users(full_name)")
         .eq("ticket_id", id).order("created_at"),
       rpc<SessionState>("get_session_state", { p_session_id: t.session_id }),
     ]);
 
-    if (facts.error) readable(facts.error);
-    if (attempts.error) readable(attempts.error);
     if (notes.error) readable(notes.error);
 
     return {
@@ -179,16 +190,8 @@ export const supabaseApi: Api = {
       status: t.status, createdAt: t.created_at,
       description: t.description, device: t.device, operatingSystem: t.operating_system,
       userNote: t.user_note,
-      facts: facts.data ?? [],
-      attempts: (attempts.data ?? [])
-        .map((a: any) => ({
-          stepId: a.step_id,
-          title: a.troubleshooting_steps?.title ?? "",
-          outcome: a.outcome,
-          position: a.troubleshooting_steps?.position ?? 0,
-        }))
-        .sort((a: any, b: any) => a.position - b.position)
-        .map(({ stepId, title, outcome }: any) => ({ stepId, title, outcome })),
+      facts: session.facts,
+      attempts: session.attempts,
       path: session.path.map((n) => ({ ...n, state: "known" as const })),
       notes: (notes.data ?? []).map((n: any) => ({
         author: n.users?.full_name ?? "System",

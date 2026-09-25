@@ -9,29 +9,34 @@ export function TicketPanel({
 }: {
   ticketId: string;
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
   flash: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
 
-  const load = useCallback(() => {
+  const actionLock = useRef(false);
+  const mounted = useRef(true);
+  const load = useCallback(async () => {
     setLoadError(null);
-    api.getTicket(ticketId)
-      .then(setTicket)
+    await api.getTicket(ticketId)
+      .then((value) => { if (mounted.current) setTicket(value); })
       .catch((e: Error) => {
+        if (!mounted.current) return;
+        setTicket(null);
         setLoadError(e.message);
         onError(e.message);
       });
   }, [ticketId, onError]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false; }; }, [load]);
 
   useEffect(() => {
     previousFocus.current = document.activeElement instanceof HTMLElement
@@ -76,18 +81,21 @@ export function TicketPanel({
   }, [onClose]);
 
   async function act(fn: () => Promise<unknown>, msg: string): Promise<boolean> {
+    if (actionLock.current) return false;
+    actionLock.current = true;
     setBusy(true);
+    setActionError(null);
     try {
       await fn();
       flash(msg);
-      load();
-      onChanged();
+      await Promise.all([load(), onChanged()]);
       return true;
     } catch (e) {
-      onError((e as Error).message);
+      setActionError((e as Error).message);
       return false;
     } finally {
-      setBusy(false);
+      actionLock.current = false;
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -116,6 +124,7 @@ export function TicketPanel({
           </button>
         </header>
 
+        {actionError ? <p className="banner" role="alert">{actionError}</p> : null}
         {!ticket ? (
           <div className="panel-loading" role="status">
             <p className="said">{loadError ? "We couldn't load this ticket." : "Getting the diagnostic history…"}</p>
@@ -154,25 +163,21 @@ export function TicketPanel({
               {ticket.notes.length ? (
                 <ul className="notes">
                   {ticket.notes.map((n, i) => (
-                    <li key={i}><span className="who">{n.author}</span>{n.body}</li>
+                    <li key={i}><span className="who">{n.author}</span><time className="hint" dateTime={n.createdAt}>{new Date(n.createdAt).toLocaleString()}</time><p>{n.body}</p></li>
                   ))}
                 </ul>
               ) : (
                 <p className="hint">Nothing yet. Notes stay on this side — the requester never sees them.</p>
               )}
               <div className="noterow">
-                <input
+                <textarea
+                  rows={3}
+                  disabled={busy}
                   value={noteDraft}
                   onChange={(e) => setNoteDraft(e.target.value)}
                   placeholder="Add an internal note"
                   aria-label="Add an internal note"
                   maxLength={2000}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !busy && noteDraft.trim()) {
-                      e.preventDefault();
-                      void submitNote();
-                    }
-                  }}
                 />
                 <button
                   className="btn"
@@ -201,6 +206,7 @@ export function TicketPanel({
             </div>
 
             <div className="actions">
+              {ticket.status !== "resolved" ? <>
               <button
                 className="btn" disabled={busy || Boolean(ticket.assignee)}
                 onClick={() => act(
@@ -209,8 +215,10 @@ export function TicketPanel({
               >
                 Assign to me
               </button>
+              {ticket.status === "waiting" && ticket.assignee ? <button className="btn" disabled={busy}
+                onClick={() => act(() => api.updateTicket(ticket.id, { status: "assigned" }), "Work resumed")}>Resume work</button> : null}
               <button
-                className="btn" disabled={busy}
+                className="btn" disabled={busy || ticket.status === "waiting"}
                 onClick={() => act(
                   () => api.updateTicket(ticket.id, { status: "waiting" }),
                   `Marked as waiting for ${ticket.requester.split(" ")[0]}`)}
@@ -218,13 +226,14 @@ export function TicketPanel({
                 Mark waiting for user
               </button>
               <button
-                className="btn btn-primary" disabled={busy || ticket.status === "resolved"}
+                className="btn btn-primary" disabled={busy}
                 onClick={() => act(
                   () => api.updateTicket(ticket.id, { status: "resolved" }),
                   "Marked resolved")}
               >
                 Mark resolved
               </button>
+              </> : <p role="status">Resolved</p>}
               <button
                 className="btn btn-plain" disabled={busy}
                 onClick={() => act(() => api.saveRoute(ticket.id), "Diagnostic path saved")}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Catalog, Profile, SessionState } from "@/types";
+import { AUTH_EXPIRED_EVENT } from "@/api/authEvents";
+import { confirmLeave } from "@/unsaved";
 import { api, usingLiveBackend } from "@/api";
 
 import { Trail } from "@/components/Trail";
@@ -19,6 +21,17 @@ type Stage = "landing" | "diagnose" | "fix" | "escalate" | "resolved" | "sent";
 
 const ACTIVE_SESSION_KEY = "resolve.activeSessionId";
 
+function readActiveSession(): string | null {
+  try { return window.localStorage.getItem(ACTIVE_SESSION_KEY); }
+  catch { return null; }
+}
+function storeActiveSession(id: string | null) {
+  try {
+    if (id) window.localStorage.setItem(ACTIVE_SESSION_KEY, id);
+    else window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+  } catch { /* Storage may be blocked; the current flow still works in memory. */ }
+}
+
 function stageForSession(session: SessionState): Stage {
   if (session.status === "resolved") return "resolved";
   if (session.status === "escalated" || session.status === "abandoned") return "landing";
@@ -37,6 +50,13 @@ export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const actionLock = useRef(false);
+  const authGeneration = useRef(0);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogRetry, setCatalogRetry] = useState(0);
+  const [restoring, setRestoring] = useState(usingLiveBackend);
+  const [restoreError, setRestoreError] = useState(false);
+  const [restoreRetry, setRestoreRetry] = useState(0);
 
   const [stage, setStage] = useState<Stage>("landing");
   const [description, setDescription] = useState("");
@@ -50,7 +70,6 @@ export default function App() {
 
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
-  const diagnosisTimer = useRef<number | undefined>(undefined);
   const flash = useCallback((msg: string) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
@@ -58,7 +77,17 @@ export default function App() {
   }, []);
   useEffect(() => () => {
     window.clearTimeout(toastTimer.current);
-    window.clearTimeout(diagnosisTimer.current);
+  }, []);
+
+  useEffect(() => {
+    const expired = () => {
+      authGeneration.current++;
+      setProfile(null); setCatalog(null); setSession(null); setStage("landing");
+      setSurface("support"); setRestoring(false); setRestoreError(false);
+      setError("Your session has ended. Sign in again to continue.");
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, expired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
   }, []);
 
   /* ------------------------------- session ------------------------------ */
@@ -72,54 +101,62 @@ export default function App() {
 
   useEffect(() => {
     if (!profile) { setCatalog(null); return; }
+    let cancelled = false;
+    setCatalogError(false);
     api.getCatalog()
       .then((c) => {
+        if (cancelled) return;
         setCatalog(c);
         if (c.devices[0]) setDevice(c.devices[0]);
         if (c.systems[0]) setOs(c.systems[0]);
       })
-      .catch((e: Error) => setError(e.message));
-  }, [profile]);
+      .catch(() => { if (!cancelled) setCatalogError(true); });
+    return () => { cancelled = true; };
+  }, [profile, catalogRetry]);
 
   // The live backend can resume an unfinished diagnosis after a refresh.
   // Demo mode intentionally stays ephemeral, so a stale mock id is never restored.
   useEffect(() => {
     if (!profile || !usingLiveBackend) return;
-    const id = window.localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (!id) return;
+    const id = readActiveSession();
+    if (!id) { setRestoring(false); return; }
+    setRestoring(true); setRestoreError(false);
 
     let cancelled = false;
     api.getSession(id)
       .then((restored) => {
         if (cancelled) return;
         if (restored.status === "escalated" || restored.status === "abandoned") {
-          window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+          storeActiveSession(null);
           return;
         }
         setSession(restored);
         setStage(stageForSession(restored));
       })
-      .catch(() => {
-        window.localStorage.removeItem(ACTIVE_SESSION_KEY);
-      });
+      .catch(() => { if (!cancelled) setRestoreError(true); })
+      .finally(() => { if (!cancelled) setRestoring(false); });
 
     return () => { cancelled = true; };
-  }, [profile]);
+  }, [profile, restoreRetry]);
 
   useEffect(() => {
     if (!usingLiveBackend) return;
     if (session?.status === "in_progress") {
-      window.localStorage.setItem(ACTIVE_SESSION_KEY, session.id);
+      storeActiveSession(session.id);
     } else if (session) {
-      window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+      storeActiveSession(null);
     }
   }, [session]);
 
-  const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+  const run = useCallback(async <T,>(fn: () => Promise<T>, allowSignOut = false): Promise<T | undefined> => {
+    if (actionLock.current) return undefined;
+    actionLock.current = true;
+    const generation = authGeneration.current;
     setBusy(true);
-    try { return await fn(); }
+    setError(null);
+    try { const value = await fn(); return allowSignOut || generation === authGeneration.current ? value : undefined; }
     catch (e) { setError((e as Error).message); return undefined; }
-    finally { setBusy(false); }
+    finally { actionLock.current = false; setBusy(false); }
   }, []);
 
   const isStaff = profile?.role === "technician" || profile?.role === "admin";
@@ -134,7 +171,7 @@ export default function App() {
     const s = await run(() => api.startSession({
       categoryId, description, device, operatingSystem: os,
     }));
-    if (s) { setSession(s); setStage("diagnose"); }
+    if (s) { setSession(s); setStage(stageForSession(s)); }
   }
 
   async function choose(optionId: string) {
@@ -144,15 +181,14 @@ export default function App() {
     setSession(s);
     if (s.diagnosis) {
       setStepPhase("idle");
-      window.clearTimeout(diagnosisTimer.current);
-      diagnosisTimer.current = window.setTimeout(() => setStage("fix"), 420);
+      setStage("fix");
     }
   }
 
   async function undo() {
     if (!session) return;
     const s = await run(() => api.undoLastAnswer(session.id));
-    if (s) { setSession(s); setStage("diagnose"); }
+    if (s) { setSession(s); setStage(stageForSession(s)); }
   }
 
   async function mark(outcome: "fixed" | "failed") {
@@ -171,7 +207,7 @@ export default function App() {
     if (!session) return;
     const t = await run(() => api.escalate(session.id, note));
     if (t) {
-      window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+      storeActiveSession(null);
       setSession((current) => current ? { ...current, status: "escalated" } : current);
       setReference(t.reference);
       setStage("sent");
@@ -179,8 +215,7 @@ export default function App() {
   }
 
   function clearFlow() {
-    window.clearTimeout(diagnosisTimer.current);
-    window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+    storeActiveSession(null);
     setStage("landing"); setDescription(""); setCategoryId(null); setSession(null);
     setNote(""); setReference(null); setStepPhase("idle");
   }
@@ -198,15 +233,13 @@ export default function App() {
 
   async function signIn(email: string, password: string) {
     const p = await run(() => api.signIn(email, password));
-    if (p) { setProfile(p); setSurface("support"); flash(`Signed in as ${p.fullName}`); }
+    if (p) { setProfile(p); setSurface(!usingLiveBackend && p.role === "admin" ? "editor" : !usingLiveBackend && p.role === "technician" ? "desk" : "support"); flash(`Signed in as ${p.fullName}`); }
   }
 
   async function signOut() {
-    if (session?.status === "in_progress") {
-      await run(() => api.abandonSession(session.id));
-    }
-    await run(() => api.signOut());
-    setProfile(null); clearFlow(); setSurface("support");
+    if (!confirmLeave()) return;
+    const signedOut = await run(async () => { await api.signOut(); return true; }, true);
+    if (signedOut) { setError(null); setRestoreError(false); setProfile(null); clearFlow(); setSurface("support"); }
   }
 
   /* ------------------------------- render ------------------------------- */
@@ -233,14 +266,14 @@ export default function App() {
                 <button
                   aria-pressed={surface === "support"}
                   className={surface === "support" ? "on" : ""}
-                  onClick={() => setSurface("support")}
+                  onClick={() => { if (surface !== "support" && confirmLeave()) setSurface("support"); }}
                 >
                   Get help
                 </button>
                 <button
                   aria-pressed={surface === "desk"}
                   className={surface === "desk" ? "on" : ""}
-                  onClick={() => setSurface("desk")}
+                  onClick={() => { if (surface !== "desk" && confirmLeave()) setSurface("desk"); }}
                 >
                   IT desk
                 </button>
@@ -248,7 +281,7 @@ export default function App() {
                   <button
                     aria-pressed={surface === "editor"}
                     className={surface === "editor" ? "on" : ""}
-                    onClick={() => setSurface("editor")}
+                    onClick={() => { if (surface !== "editor" && confirmLeave()) setSurface("editor"); }}
                   >
                     Questions
                   </button>
@@ -263,7 +296,7 @@ export default function App() {
               aria-label={`Sign out ${profile.fullName}`}
               disabled={busy}
             >
-              {profile.fullName.split(" ")[0]}
+              {usingLiveBackend ? profile.fullName.split(" ")[0] : "Switch role"}
               <span className="role-chip">{profile.role.replace("_", " ")}</span>
             </button>
           </div>
@@ -273,6 +306,10 @@ export default function App() {
       {error ? (
         <div className="banner" role="alert">
           <span>{error}</span>
+          {usingLiveBackend && session ? <button className="btn btn-plain btn-sm" disabled={busy} onClick={async () => {
+            const restored = await run(() => api.getSession(session.id));
+            if (restored) { setSession(restored); setStage(stageForSession(restored)); setStepPhase("idle"); }
+          }}>Reload saved progress</button> : null}
           <button className="btn btn-plain btn-sm" onClick={() => setError(null)}>Dismiss</button>
         </div>
       ) : null}
@@ -280,7 +317,14 @@ export default function App() {
       <main className="page">
         {!profile ? (
           <SignIn onSubmit={signIn} busy={busy} />
-        ) : surface === "desk" && isStaff ? (
+        ) : restoreError ? (
+          <div className="empty" role="alert"><p>We couldn't restore your support session. Retry, sign in again, or start a new request.</p>
+            <button className="btn" onClick={() => setRestoreRetry((n) => n + 1)}>Retry</button>
+            <button className="btn" onClick={() => { clearFlow(); setRestoreError(false); }}>Start a new request</button>
+          </div>
+        ) : restoring ? <div className="loading" role="status">Restoring your support session…</div>
+        : catalogError ? <div className="empty" role="alert"><p>We couldn't load the categories.</p><button className="btn" onClick={() => setCatalogRetry((n) => n + 1)}>Retry</button></div>
+        : surface === "desk" && isStaff ? (
           <ITDesk flash={flash} onError={setError} />
         ) : surface === "editor" && isAdmin ? (
           catalog
@@ -362,7 +406,7 @@ export default function App() {
 
       {!usingLiveBackend && profile ? (
         <p className="demo-flag">
-          Demo data — connect Supabase in <code>.env</code> to run against the real database.
+          Demo mode · Example data resets on reload.
         </p>
       ) : null}
 

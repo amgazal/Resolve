@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { QueueStats, SavedRoute, TicketRow } from "@/types";
 import { api } from "@/api";
 import { TicketPanel } from "./TicketPanel";
@@ -29,15 +29,32 @@ export function ITDesk({
   const [routes, setRoutes] = useState<SavedRoute[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const refresh = useCallback(() => {
-    Promise.all([api.getTickets(), api.getStats(), api.getRoutes()])
-      .then(([t, s, r]) => { setTickets(t); setStats(s); setRoutes(r); })
-      .catch((e: Error) => onError(e.message));
-  }, [onError]);
+  const closePanel = useCallback(() => setOpenId(null), []);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const generation = useRef(0);
+  const refresh = useCallback(async () => {
+    const request = ++generation.current;
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const [t, s, r] = await Promise.all([api.getTickets(), api.getStats(), api.getRoutes()]);
+      if (request !== generation.current) return;
+      setTickets(t); setStats(s); setRoutes(r);
+    } catch {
+      if (request === generation.current) setLoadError(true);
+    } finally {
+      if (request === generation.current) setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { void refresh(); return () => { generation.current++; }; }, [refresh]);
 
-  if (!tickets || !stats) return <div className="loading">Loading the queue…</div>;
+  if (loadError) return <div className="empty" role="alert">
+    <p>We couldn't load the support queue. Try again.</p>
+    <button className="btn" onClick={() => void refresh()}>Retry</button>
+  </div>;
+  if (!tickets || !stats) return <div className="loading" role="status">Loading the queue…</div>;
 
   const ordered = [...tickets].sort((a, b) =>
     Number(a.status === "resolved") - Number(b.status === "resolved") ||
@@ -68,6 +85,7 @@ export function ITDesk({
         </div>
       </header>
 
+      <button className="btn" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh queue"}</button>
       <div className="desk-body">
         <div className="tablecard">
           {ordered.length === 0 ? (
@@ -89,18 +107,10 @@ export function ITDesk({
                     <tr
                       key={t.id}
                       className={openId === t.id ? "on" : ""}
-                      tabIndex={0}
                       onClick={() => setOpenId(t.id)}
-                      aria-label={`Open ${t.reference} from ${t.requester}`}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setOpenId(t.id);
-                        }
-                      }}
                     >
                       <td>
-                        <span className="who">{t.requester}</span>
+                        <button className="btn btn-plain" aria-label={`Open ${t.reference} from ${t.requester}`} onClick={() => setOpenId(t.id)}>{t.requester}</button>
                         <span className="ref-sm">{t.reference}</span>
                       </td>
                       <td>{t.categoryShort}</td>
@@ -157,7 +167,7 @@ export function ITDesk({
       {openId ? (
         <TicketPanel
           ticketId={openId}
-          onClose={() => setOpenId(null)}
+          onClose={closePanel}
           onChanged={refresh}
           flash={flash}
           onError={onError}

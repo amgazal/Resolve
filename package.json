@@ -9,9 +9,13 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
-    "test": "vitest run",
+    "test": "vitest run src",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "test:browser": "playwright test",
+    "build:demo": "VITE_SUPABASE_URL= VITE_SUPABASE_PUBLISHABLE_KEY= VITE_SUPABASE_ANON_KEY= VITE_BASE_PATH=/Resolve/ npm run build",
+    "test:integration": "node --import tsx tests/integration/roles.ts",
+    "test:browser:live": "playwright test -c playwright.live.config.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -19,13 +23,16 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.10.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "supabase": "2.117.0",
     "tsx": "^4.16.2",
     "typescript": "^5.5.4",
-    "vite": "^5.4.0",
-    "@types/node": "^22.10.0",
-    "vitest": "^2.1.8"
+    "vite": "^6.4.3",
+    "vitest": "^4.1.11"
   }
 }

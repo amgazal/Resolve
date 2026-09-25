@@ -27,6 +27,7 @@ Create a Supabase project. Then apply the database files in this order:
 supabase/01_schema.sql
 supabase/02_policies.sql
 supabase/03_functions.sql
+supabase/04_hardening.sql
 ```
 
 For a new database, choose either the SQL editor sequence above or the CLI migration below. They contain the same schema, policies, and functions; do not apply both to the same database.
@@ -36,14 +37,13 @@ For a new database, choose either the SQL editor sequence above or the CLI migra
 With the Supabase CLI installed, run from the project root:
 
 ```bash
-supabase init
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push --dry-run
-supabase db push
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase db push --dry-run
+npx supabase db push
 ```
 
-`supabase/config.toml` is not checked in, so run `supabase init` once before using the CLI. Review the dry run before pushing. The migration in [`supabase/migrations/`](./supabase/migrations/) contains the initial database setup. Add future database changes as migrations.
+`supabase/config.toml` is checked in for local development; the CLI is pinned in npm dependencies. Review the dry run before pushing. The migrations include the initial schema and a separate hardening migration. Existing installations need the hardening migration, not a rerun of the bootstrap schema or seed. If the initial schema was installed manually, reconcile its migration history before using CLI migrations.
 
 ### Seed before creating Auth users
 
@@ -104,24 +104,22 @@ Restart `npm run dev`, sign in with one of the Auth accounts, and verify a compl
 
 ## 4. Run the database checks
 
-With the Supabase CLI installed and Docker running, initialize the local configuration with `supabase init` if it does not exist, then run:
+With Docker running and npm dependencies installed:
 
 ```bash
-supabase start
-supabase db reset
-supabase db lint --level warning
-supabase test db
+npx supabase start -x studio,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor
+npx supabase db lint --level warning
+npx supabase test db
+npm run test:integration
+npx playwright install chromium
+npm run test:browser:live
 ```
 
-`supabase db reset` resets the local database and applies the migration snapshot from `supabase/migrations/`. The pgTAP tests under `supabase/tests/database/` check key RLS/integrity assumptions. The repository also includes `.github/workflows/database-tests.yml`, which starts a fresh local Supabase database, lints it, and runs those tests on pull requests or manual runs.
+The local API uses port 55321 and PostgreSQL uses 55322. `npx supabase db reset --local --no-seed` is available for a disposable development database; it destroys local data and reapplies migrations. Do not use the seed against an organization with diagnostic history.
 
-Also test the real product with separate accounts:
+The pgTAP suite checks schema, grants and integrity. The authenticated suite creates isolated requester, technician and admin accounts across two organizations, then removes only its fixtures. It uses a privileged key solely for fixture setup/cleanup; assertions use real password-authenticated clients. Live browser checks cover refresh restoration and error recovery. These suites refuse non-local endpoints and read local keys from CLI status without storing them in repository files.
 
-- end user: own session/tickets only; no technician queue or internal notes
-- technician: escalated queue, notes, assignment/status controls; no tree editing
-- admin: technician abilities plus draft tree authoring/publishing
-
-Before calling the backend ready, verify that an unfinished diagnosis survives a browser refresh and that publishing a new tree does not change a session that already started on the previous version.
+The database workflow runs these commands with the npm-pinned Supabase CLI. Before publishing a hosted deployment, repeat representative flows against that configured project; local verification does not establish its deployed migration or Auth settings.
 
 ## 5. Configure GitHub Pages
 

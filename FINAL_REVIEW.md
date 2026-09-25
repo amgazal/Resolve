@@ -1,12 +1,14 @@
 # Resolve verification checklist
 
-Use this checklist when reviewing a release. It describes checks to run, not a record of completed validation. Backend setup and database commands are in [DEPLOYMENT.md](./DEPLOYMENT.md).
+Use this checklist when reviewing a release. The checklist describes checks to run; the dated section below records this review. Backend setup and database commands are in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Automated checks
 
 ```bash
 npm ci
 npm run check
+npm audit
+npm run test:browser
 ```
 
 `npm run check` runs TypeScript checking, Vitest, and the production build. The [mock API tests](./src/api/mockApi.test.ts) cover role restrictions, invalid answers, session retrieval, ordered and immutable troubleshooting attempts, abandonment, premature escalation, draft cloning, and cycle rejection.
@@ -14,8 +16,10 @@ npm run check
 With the local Supabase database running:
 
 ```bash
-supabase db lint --level warning
-supabase test db
+npx supabase db lint --level warning
+npx supabase test db
+npm run test:integration
+npm run test:browser:live
 ```
 
 The [pgTAP suite](./supabase/tests/database/schema_security_test.sql) checks policy structure, security-invoker views, cross-tree and cross-organization integrity, and resolution timestamps. These tests do not replace checks made through authenticated clients with different roles.
@@ -50,6 +54,10 @@ Use separate end-user, technician, and admin accounts. Test direct API requests 
 - Confirm failed note submissions preserve the draft and failed ticket loads offer retry.
 - Check the deployed site's asset paths and whether it is using the intended demo or Supabase configuration.
 
-## Remaining coverage
+## Review results — September 24, 2026
 
-The repository has mock-adapter tests and database structure/integrity tests. It does not include browser automation or a complete authenticated, multi-role database test suite. Live session recovery, historical tree behavior, and role boundaries still need verification against a configured backend.
+This review added explicit database grants, private policy helpers, text limits, terminal ticket resolution, publication/edit serialization, and authenticated tests using five accounts across two organizations. UI checks cover demo onboarding, explicit answer drafts, destructive confirmations, modal keyboard behavior, and live session recovery.
+
+Verified locally: `npm ci`; `npm run check` (also with Node 22.20.0); `npm audit` and `npm audit --omit=dev` (zero reported vulnerabilities); `npx supabase db reset --local --no-seed`; `npx supabase db lint --level warning`; `npx supabase test db`; `npm run test:integration`; `npm run test:browser`; and `npm run test:browser:live`. Supabase CLI 2.117.0 applied both migrations from scratch. Tests exercised the `/Resolve/` asset base path, and screenshots of loaded requester, technician and admin surfaces were inspected at mobile and desktop widths.
+
+Muted text was measured at 4.69:1 against paper and 5.43:1 against white. The browser suite checks overflow at 320, 375, 430, 768, 1024 and 1440 pixels. No hosted deployment or GitHub-hosted workflow run was performed. Chromium automation and axe assist the review; they do not certify accessibility or substitute for testing other browsers and assistive technologies. Hosted Supabase and GitHub Pages settings must still be verified when deploying.

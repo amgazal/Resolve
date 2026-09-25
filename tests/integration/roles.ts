@@ -1,0 +1,119 @@
+/** Real password-authenticated requests. Service access is fixture setup/cleanup only. */
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+const local = JSON.parse(execFileSync('npx', ['supabase', 'status', '-o', 'json'], { encoding: 'utf8' }));
+const url = local.API_URL;
+assert(['localhost', '127.0.0.1'].includes(new URL(url).hostname), 'Tests only run against local Supabase');
+const options = { auth: { persistSession: false, autoRefreshToken: false } };
+const service = createClient(url, local.SERVICE_ROLE_KEY, options);
+const anonymous = createClient(url, local.ANON_KEY, options);
+const orgs = [randomUUID(), randomUUID()];
+const userIds: string[] = [];
+const trees: string[] = [];
+const categories: string[] = [];
+const clients: SupabaseClient[] = [];
+const tag = randomUUID().slice(0, 8);
+let checks = 0;
+function ok(result: any) { assert.equal(result.error, null, JSON.stringify(result.error)); return result.data; }
+function denied(result: any) { assert.ok(result.error || (Array.isArray(result.data) && result.data.length === 0) || result.data === null, 'Expected denial or no visible rows'); checks++; }
+async function rpc(client: SupabaseClient, name: string, args: object = {}) { return ok(await client.rpc(name, args)); }
+async function identity(org: string, role: string, name: string) {
+  const email = `${tag}-${name}@resolve.test`, password = `Resolve-${randomUUID()}!`;
+  const data = ok(await service.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: name } }));
+  userIds.push(data.user.id);
+  ok(await service.from('users').update({ org_id: org, role }).eq('id', data.user.id));
+  const client = createClient(url, local.ANON_KEY, options);
+  ok(await client.auth.signInWithPassword({ email, password })); clients.push(client); return client;
+}
+async function fixture(org: string) {
+  const category = randomUUID(), tree = randomUUID(), node = randomUUID(), diagnosis = randomUUID(), option = randomUUID(), step = randomUUID();
+  categories.push(category); trees.push(tree);
+  ok(await service.from('diagnostic_categories').insert({ id: category, org_id: org, slug: tag, label: 'Test support', short_label: 'Test' }));
+  ok(await service.from('diagnoses').insert({ id: diagnosis, org_id: org, key: tag, title: 'Test diagnosis', short_label: 'Test', node_label: 'Test' }));
+  ok(await service.from('troubleshooting_steps').insert({ id: step, diagnosis_id: diagnosis, position: 1, title: 'Try this', detail: 'Check the connection.' }));
+  ok(await service.from('diagnostic_trees').insert({ id: tree, category_id: category, version: 1, root_label: 'Test' }));
+  ok(await service.from('diagnostic_nodes').insert({ id: node, tree_id: tree, key: 'root', question: 'Does it work?', fact_label: 'Connection', short_label: 'Works?' }));
+  ok(await service.from('diagnostic_options').insert({ id: option, node_id: node, label: 'No', fact_value: 'Not working', diagnosis_id: diagnosis }));
+  ok(await service.from('diagnostic_trees').update({ root_node_id: node, status: 'published' }).eq('id', tree));
+  return { category, tree, node, option, step };
+}
+try {
+  ok(await service.from('organizations').insert(orgs.map((id, i) => ({ id, name: `Test ${i}`, slug: `${tag}-${i}` }))));
+  const a = await identity(orgs[0]!, 'end_user', 'requester-a');
+  const b = await identity(orgs[0]!, 'end_user', 'requester-b');
+  const tech = await identity(orgs[0]!, 'technician', 'technician');
+  const admin = await identity(orgs[0]!, 'admin', 'admin');
+  const other = await identity(orgs[1]!, 'admin', 'other-org');
+  const one = await fixture(orgs[0]!); const two = await fixture(orgs[1]!);
+  const input = (category = one.category) => ({ p_category_id: category, p_description: '  Connection failed  ', p_device: ' Laptop ', p_operating_system: ' macOS ' });
+  let session = await rpc(a, 'start_session', input());
+  assert.equal(session.description, 'Connection failed'); assert.equal(session.device, 'Laptop'); checks++;
+  const theirs = await rpc(b, 'start_session', input());
+  denied(await a.rpc('get_session_state', { p_session_id: theirs.id }));
+  denied(await a.rpc('answer_question', { p_session_id: theirs.id, p_option_id: one.option }));
+  denied(await tech.rpc('answer_question', { p_session_id: session.id, p_option_id: one.option }));
+  denied(await a.from('diagnostic_sessions').update({ status: 'resolved' }).eq('id', session.id));
+  denied(await a.from('diagnostic_nodes').select('*'));
+  denied(await a.rpc('open_tree_draft', { p_category_id: one.category }));
+  denied(await a.rpc('start_session', { ...input(), p_description: 'x'.repeat(4001) }));
+  denied(await a.rpc('start_session', { ...input(), p_device: 'x'.repeat(201) }));
+  denied(await a.rpc('start_session', input(two.category)));
+  denied(await a.rpc('answer_question', { p_session_id: session.id, p_option_id: two.option }));
+  session = await rpc(a, 'answer_question', { p_session_id: session.id, p_option_id: one.option });
+  assert.equal(session.facts[0].value, 'Not working'); checks++;
+  session = await rpc(a, 'record_attempt', { p_session_id: session.id, p_step_id: one.step, p_outcome: 'failed' });
+  assert.equal(session.attempts.length, 1); checks++;
+  denied(await a.rpc('escalate_session', { p_session_id: session.id, p_note: 'x'.repeat(2001) }));
+  const ticket = await rpc(a, 'escalate_session', { p_session_id: session.id, p_note: ' Please help ' });
+  assert.deepEqual(await rpc(a, 'escalate_session', { p_session_id: session.id, p_note: 'retry' }), ticket); checks++;
+  assert.equal(ok(await a.from('tickets').select('*').eq('id', ticket.id)).length, 1); checks++;
+  denied(await b.from('tickets').select('*').eq('id', ticket.id));
+  denied(await a.from('ticket_queue').select('*'));
+  denied(await a.from('tickets').update({ status: 'resolved' }).eq('id', ticket.id));
+  const queue = ok(await tech.from('ticket_queue').select('*').eq('id', ticket.id)); assert.equal(queue.length, 1); checks++;
+  const context = await rpc(tech, 'get_session_state', { p_session_id: session.id }); assert.equal(context.facts.length, 1); checks++;
+  await rpc(tech, 'update_ticket', { p_ticket_id: ticket.id, p_status: 'assigned', p_assign_to_me: true });
+  await rpc(tech, 'add_ticket_note', { p_ticket_id: ticket.id, p_body: ' Internal only ' });
+  assert.equal(ok(await tech.from('ticket_notes').select('*').eq('ticket_id', ticket.id))[0].body, 'Internal only'); checks++;
+  denied(await a.from('ticket_notes').select('*').eq('ticket_id', ticket.id));
+  denied(await other.from('ticket_queue').select('*').eq('id', ticket.id));
+  denied(await other.rpc('update_ticket', { p_ticket_id: ticket.id, p_status: 'resolved' }));
+  denied(await tech.rpc('open_tree_draft', { p_category_id: one.category }));
+  denied(await tech.from('diagnostic_nodes').update({ question: 'Attack' }).eq('id', one.node).select());
+  denied(await tech.rpc('add_ticket_note', { p_ticket_id: ticket.id, p_body: 'x'.repeat(2001) }));
+  await rpc(tech, 'update_ticket', { p_ticket_id: ticket.id, p_status: 'waiting' });
+  await rpc(tech, 'update_ticket', { p_ticket_id: ticket.id, p_status: 'resolved' });
+  for (const status of ['waiting', 'new', 'assigned', 'needs_review']) denied(await tech.rpc('update_ticket', { p_ticket_id: ticket.id, p_status: status }));
+  const draftId = await rpc(admin, 'open_tree_draft', { p_category_id: one.category }); trees.push(draftId);
+  const draft = await rpc(admin, 'get_tree', { p_tree_id: draftId });
+  const nodeId = draft.nodes[0].id;
+  ok(await admin.from('diagnostic_nodes').update({ question: ' Updated question? ' }).eq('id', nodeId));
+  assert.equal((await rpc(admin, 'get_tree', { p_tree_id: draftId })).nodes[0].question, 'Updated question?'); checks++;
+  denied(await admin.from('diagnostic_nodes').update({ question: 'x'.repeat(2001) }).eq('id', nodeId));
+  denied(await admin.from('diagnostic_nodes').update({ tree_id: two.tree }).eq('id', nodeId));
+  denied(await admin.rpc('open_tree_draft', { p_category_id: two.category }));
+  denied(await admin.from('diagnostic_nodes').update({ question: 'Attack' }).eq('id', two.node).select());
+  await rpc(admin, 'publish_tree', { p_tree_id: draftId });
+  denied(await admin.from('diagnostic_nodes').update({ question: 'Attack live' }).eq('id', nodeId).select());
+  const pinned = await rpc(b, 'answer_question', { p_session_id: theirs.id, p_option_id: one.option });
+  assert.equal(pinned.diagnosis.id, session.diagnosis.id); checks++;
+  for (const table of ['users', 'tickets', 'ticket_notes', 'diagnostic_sessions', 'diagnostic_nodes']) denied(await anonymous.from(table).select('*'));
+  denied(await anonymous.rpc('start_session', input()));
+  denied(await anonymous.rpc('get_session_state', { p_session_id: session.id }));
+  for (const fn of ['auth_org', 'auth_role', 'is_admin', 'handle_new_auth_user']) denied(await a.rpc(fn));
+  console.log(`Authenticated role-boundary checks passed (${checks} assertions).`);
+} finally {
+  // Remove only this run's UUID-scoped fixtures; never reset a user's database.
+  for (const client of clients) await client.auth.signOut();
+  ok(await service.from('tickets').delete().in('org_id', orgs));
+  ok(await service.from('diagnostic_sessions').delete().in('org_id', orgs));
+  if (categories.length) {
+    ok(await service.from('diagnostic_trees').update({ root_node_id: null }).in('category_id', categories));
+    ok(await service.from('diagnostic_trees').delete().in('category_id', categories));
+  }
+  for (const id of userIds) ok(await service.auth.admin.deleteUser(id));
+  ok(await service.from('organizations').delete().in('id', orgs));
+}
