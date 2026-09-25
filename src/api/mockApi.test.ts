@@ -196,7 +196,7 @@ describe.sequential("final workflow guards", () => {
     await signIn("jordan@northgate.test");
     const ticket = (await mockApi.getTickets()).find((t) => !t.assignee && t.status !== "resolved")!;
     await mockApi.updateTicket(ticket.id, { status: "assigned", assignToMe: true });
-    await mockApi.updateTicket(ticket.id, { status: "waiting" });
+    await mockApi.sendTicketMessage(ticket.id, "Please confirm the connection", true);
     await mockApi.updateTicket(ticket.id, { status: "resolved" });
     for (const status of ["new", "assigned", "waiting", "needs_review"] as const) {
       await expect(mockApi.updateTicket(ticket.id, { status })).rejects.toThrow(/status change/i);
@@ -207,5 +207,58 @@ describe.sequential("final workflow guards", () => {
     await signIn("maya@northgate.test");
     const category = (await mockApi.getCatalog()).categories[0]!;
     await expect(mockApi.startSession({ categoryId: category.id, description: "x".repeat(4001), device: "Laptop", operatingSystem: "macOS" })).rejects.toThrow(/4,000/);
+  });
+});
+
+describe.sequential("product completion", () => {
+  it("separates public replies from notes, preserves assignment, and deduplicates reusable paths", async () => {
+    await signIn("maya@northgate.test");
+    const category = (await mockApi.getCatalog()).categories.find(c => c.slug === "other")!;
+    let session = await mockApi.startSession({ categoryId: category.id, description: "Private requester detail", device: "Laptop", operatingSystem: "macOS" });
+    while (session.node) session = await mockApi.answer(session.id, session.node.options[0]!.id);
+    const ticket = await mockApi.escalate(session.id, "Private additional note");
+    await signIn("jordan@northgate.test");
+    await mockApi.updateTicket(ticket.id, { assignToMe: true, status: "assigned" });
+    await expect(mockApi.updateTicket(ticket.id, { status: "waiting" })).rejects.toThrow(/conversation/);
+    await mockApi.addNote(ticket.id, "Private technician note");
+    await mockApi.sendTicketMessage(ticket.id, " Please check again ", true);
+    const saved = await mockApi.saveRoute(ticket.id);
+    expect((await mockApi.saveRoute(ticket.id)).id).toBe(saved.id);
+    expect(saved.path.length).toBeGreaterThan(0);
+    expect(JSON.stringify(saved)).not.toMatch(/Private requester|Private additional|Private technician/);
+    await signIn("sam@northgate.test");
+    await expect(mockApi.getMyTicket(ticket.id)).rejects.toThrow(/not found/i);
+    await signIn("maya@northgate.test");
+    const own = await mockApi.getMyTicket(ticket.id);
+    expect(own.status).toBe("waiting");
+    expect(own.messages[0]?.body).toBe("Please check again");
+    expect(own).not.toHaveProperty("notes");
+    expect(JSON.stringify(own)).not.toContain("Private technician");
+    await expect(mockApi.sendTicketMessage(ticket.id, " \t\n ")).rejects.toThrow(/message/);
+    await mockApi.sendTicketMessage(ticket.id, "Still broken");
+    await signIn("jordan@northgate.test");
+    const updated = await mockApi.getTicket(ticket.id);
+    expect(updated.status).toBe("needs_review");
+    expect(updated.assigneeId).toBe("u_jordan");
+    await mockApi.updateTicket(ticket.id, { status: "resolved" });
+    await expect(mockApi.sendTicketMessage(ticket.id, "Reopen")).rejects.toThrow(/resolved/i);
+  });
+  it("uses the same validation for preview results and publication and records admin changes", async () => {
+    await signIn("sam@northgate.test");
+    const category = (await mockApi.getCatalog()).categories.find(c => c.slug === "other")!;
+    let tree = await mockApi.openDraft(category.id);
+    expect((await mockApi.validateTree(tree.id)).valid).toBe(true);
+    tree = await mockApi.saveNode(tree.id, { question: "Unreachable", shortLabel: "Unreachable", factLabel: "Detail" });
+    expect((await mockApi.validateTree(tree.id)).valid).toBe(false);
+    await expect(mockApi.publishTree(tree.id)).rejects.toThrow();
+    const node = tree.nodes.find(n => n.question === "Unreachable")!;
+    await mockApi.deleteNode(tree.id, node.id);
+    expect((await mockApi.validateTree(tree.id)).valid).toBe(true);
+    await mockApi.publishTree(tree.id);
+    const history = await mockApi.getTreeVersions(category.id);
+    expect(history.some(v => v.status === "archived")).toBe(true);
+    const events = await mockApi.getAdminAudit(category.id);
+    expect(events.map(e => e.action)).toContain("tree_published");
+    expect(events.every(e => e.actor === "Sam Adeyemi")).toBe(true);
   });
 });

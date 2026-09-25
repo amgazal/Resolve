@@ -665,3 +665,26 @@ button, input, select, textarea { font: inherit; }
   .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .tile { min-width: 0; padding: 12px; }
 }
+
+/* Product completion: reuse the paper, spruce, and typographic system. */
+.rsv .queue-filters { margin: 16px 0; flex-wrap: wrap; }
+.rsv .queue-filters [aria-pressed="true"] { background: var(--spruce, #285548); color: white; }
+.rsv .handoff-outcome { background: #edf2ed; padding: 20px; border-radius: 8px; }
+.rsv .handoff-outcome .said { font-size: 24px; margin-bottom: 0; }
+.rsv .handoff-assessment .said { font-size: 23px; }
+.rsv .preview { margin: 16px 0; }
+.rsv .preview .row { margin-top: 16px; flex-wrap: wrap; }
+.rsv .routes details { width: 100%; }
+.rsv .routes summary { cursor: pointer; }
+.rsv .routes details li { display: list-item; padding: 8px 0; border: 0; }
+.rsv .requests .desk-body > * { min-width: 0; }
+.rsv .requests .btn { white-space: normal; text-align: left; }
+.rsv .notes p, .rsv .requests .said { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rsv summary:focus-visible { outline: 2px solid #285548; outline-offset: 4px; }
+@media (max-width: 640px) {
+  .rsv .masthead-right, .rsv .switch { flex-wrap: wrap; }
+  .rsv .switch { max-width: 100%; }
+}
+
+.rsv .requests .desk-body { grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); }
+@media (max-width: 900px) { .rsv .requests .desk-body { grid-template-columns: 1fr; } }

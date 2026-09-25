@@ -10,8 +10,9 @@ A requester describes the problem, selects a category, and answers one question 
 
 - Guided troubleshooting for network, login, software, hardware, printing, and general issues.
 - A diagnostic trail shared between the requester flow and ticket detail view.
-- A technician queue with priority ordering, self-assignment, waiting/resolved states, internal notes, and saved diagnostic paths.
-- An admin editor for questions, answer branches, and draft publishing.
+- My requests with an asynchronous public conversation, separate from internal IT notes. Sending a reply and waiting is atomic; a requester reply returns waiting work to needs review.
+- A technician queue with personal/unassigned/waiting filters and a Path Library of reusable question/answer paths and troubleshooting attempts.
+- An admin editor with local draft preview, backend validation, read-only version history, and an organization-scoped audit trail.
 - A demo mode that runs without a database, plus a Supabase adapter for persistent accounts and support history.
 
 ## Engineering
@@ -68,15 +69,16 @@ npm run test:integration
 npm run test:browser:live
 ```
 
-The integration suite creates temporary accounts in two organizations, signs in through Auth, tests allowed and denied requests, and removes its fixtures. The live browser suite checks session restoration and failure recovery. Both refuse remote endpoints. Local ports are 55321 (API) and 55322 (database), avoiding the usual Supabase defaults.
+The integration suite creates temporary accounts in two organizations, signs in through Auth, tests allowed and denied requests, and removes its fixtures. The live browser suite includes session restoration, failure recovery, public replies, provisioning, and preview isolation. See FINAL_REVIEW.md for which checks have actually run on this revision. Both refuse remote endpoints. Local ports are 55321 (API) and 55322 (database), avoiding the usual Supabase defaults.
 
 Pull requests run application, browser, database, and authenticated integration checks in GitHub Actions. Supabase CLI is pinned to 2.117.0 in `package.json`. The Pages workflow builds and deploys on pushes to `main`; without Supabase browser variables, the deployed build uses demo mode.
 
 ## Current limitations
 
-- Requesters cannot reply to tickets inside the app, even when a technician marks one as waiting.
-- Saved diagnostic paths are references for the desk; they do not change future questions.
+- Path Library entries are references for staff; they never change published questions. Legacy saved entries may lack the richer snapshot.
 - Question trees are versioned, but diagnosis wording and troubleshooting steps are shared definitions. The seed script refuses to reseed an organization with diagnostic history.
-- New Auth accounts join the first organization. An invitation or membership flow is not implemented.
-- The queue refreshes after local actions or an explicit refresh; there is no realtime subscription. Resolved tickets are terminal; reopening is not supported.
+- New Auth accounts remain unprovisioned until a trusted SQL/server process explicitly assigns an organization and role. There is no invitation UI.
+- Conversations and the queue refresh after local actions or an explicit refresh; there is no realtime subscription or notification delivery. Resolved tickets are terminal; reopening is not supported.
 - Browser coverage is a small Chromium smoke suite, not exhaustive cross-browser or accessibility certification.
+
+The product-completion changes require `20260925000100_product_completion.sql` (or its SQL editor companion). Verification of this revision is **incomplete**: final browser and authenticated reruns were denied. See [review results](./FINAL_REVIEW.md).

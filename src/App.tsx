@@ -4,6 +4,7 @@ import { AUTH_EXPIRED_EVENT } from "@/api/authEvents";
 import { confirmLeave } from "@/unsaved";
 import { api, usingLiveBackend } from "@/api";
 
+import { MyRequests } from "@/components/MyRequests";
 import { Trail } from "@/components/Trail";
 import { SignIn } from "@/components/SignIn";
 import { Landing } from "@/components/Landing";
@@ -16,7 +17,7 @@ import { TreeEditor } from "@/admin/TreeEditor";
 
 import "@/styles/resolve.css";
 
-type Surface = "support" | "desk" | "editor";
+type Surface = "support" | "desk" | "editor" | "requests";
 type Stage = "landing" | "diagnose" | "fix" | "escalate" | "resolved" | "sent";
 
 const ACTIVE_SESSION_KEY = "resolve.activeSessionId";
@@ -100,7 +101,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!profile) { setCatalog(null); return; }
+    if (!profile || profile.role === "unprovisioned") { setCatalog(null); return; }
     let cancelled = false;
     setCatalogError(false);
     api.getCatalog()
@@ -117,7 +118,7 @@ export default function App() {
   // The live backend can resume an unfinished diagnosis after a refresh.
   // Demo mode intentionally stays ephemeral, so a stale mock id is never restored.
   useEffect(() => {
-    if (!profile || !usingLiveBackend) return;
+    if (!profile || profile.role === "unprovisioned" || !usingLiveBackend) return;
     const id = readActiveSession();
     if (!id) { setRestoring(false); return; }
     setRestoring(true); setRestoreError(false);
@@ -261,7 +262,7 @@ export default function App() {
               <button className="btn btn-plain" onClick={() => void restart()} disabled={busy}>Start over</button>
             ) : null}
 
-            {isStaff ? (
+            {profile.role !== "unprovisioned" ? (
               <div className="switch" role="group" aria-label="Choose a view">
                 <button
                   aria-pressed={surface === "support"}
@@ -270,13 +271,15 @@ export default function App() {
                 >
                   Get help
                 </button>
-                <button
+                <button aria-pressed={surface === "requests"} className={surface === "requests" ? "on" : ""}
+                  onClick={() => { if (confirmLeave()) setSurface("requests"); }}>My requests</button>
+                {isStaff ? <button
                   aria-pressed={surface === "desk"}
                   className={surface === "desk" ? "on" : ""}
                   onClick={() => { if (surface !== "desk" && confirmLeave()) setSurface("desk"); }}
                 >
                   IT desk
-                </button>
+                </button> : null}
                 {isAdmin ? (
                   <button
                     aria-pressed={surface === "editor"}
@@ -317,6 +320,11 @@ export default function App() {
       <main className="page">
         {!profile ? (
           <SignIn onSubmit={signIn} busy={busy} />
+        ) : profile.role === "unprovisioned" ? (
+          <div className="empty"><h1 className="col-title">Your account is awaiting access.</h1>
+            <p>Your account has not been provisioned yet. Ask your IT administrator to add you to your organization.</p>
+            <button className="btn" disabled={busy} onClick={async () => { const p = await run(() => api.getProfile()); if (p) setProfile(p); }}>Check access</button>
+          </div>
         ) : restoreError ? (
           <div className="empty" role="alert"><p>We couldn't restore your support session. Retry, sign in again, or start a new request.</p>
             <button className="btn" onClick={() => setRestoreRetry((n) => n + 1)}>Retry</button>
@@ -325,8 +333,8 @@ export default function App() {
         ) : restoring ? <div className="loading" role="status">Restoring your support session…</div>
         : catalogError ? <div className="empty" role="alert"><p>We couldn't load the categories.</p><button className="btn" onClick={() => setCatalogRetry((n) => n + 1)}>Retry</button></div>
         : surface === "desk" && isStaff ? (
-          <ITDesk flash={flash} onError={setError} />
-        ) : surface === "editor" && isAdmin ? (
+          <ITDesk currentUserId={profile.id} flash={flash} onError={setError} />
+        ) : surface === "requests" ? <MyRequests /> : surface === "editor" && isAdmin ? (
           catalog
             ? <TreeEditor categories={catalog.categories} flash={flash} onError={setError} />
             : <div className="loading">Loading categories…</div>
@@ -347,6 +355,7 @@ export default function App() {
         ) : stage === "sent" && reference ? (
           <Sent
             reference={reference}
+            onRequests={() => setSurface("requests")}
             canSeeQueue={isStaff}
             onView={() => setSurface("desk")}
             onDone={restart}
@@ -373,14 +382,14 @@ export default function App() {
             <aside className="sidebar">
               <div className="cardlet">
                 <p className="label">Your report</p>
-                <p className="said">{session.description || "No description given"}</p>
+                {stage !== "escalate" ? <p className="said">{session.description || "No additional description provided."}</p> : null}
                 <p className="meta">
                   {[session.device, session.operatingSystem, session.categoryLabel]
                     .filter(Boolean).join(" · ")}
                 </p>
               </div>
 
-              <div className="cardlet">
+              {stage !== "escalate" ? <div className="cardlet">
                 <p className="label">What we know</p>
                 {session.facts.length ? (
                   <dl className="facts">
@@ -395,6 +404,7 @@ export default function App() {
                 )}
               </div>
 
+              : null}
               <div className="cardlet">
                 <p className="label">Where we are</p>
                 <Trail nodes={session.path} />

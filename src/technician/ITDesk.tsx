@@ -19,8 +19,9 @@ function relativeAge(iso: string) {
 }
 
 export function ITDesk({
-  flash, onError,
+  flash, onError, currentUserId,
 }: {
+  currentUserId: string;
   flash: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -29,6 +30,7 @@ export function ITDesk({
   const [routes, setRoutes] = useState<SavedRoute[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
 
+  const [filter, setFilter] = useState("all");
   const closePanel = useCallback(() => setOpenId(null), []);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -56,7 +58,13 @@ export function ITDesk({
   </div>;
   if (!tickets || !stats) return <div className="loading" role="status">Loading the queue…</div>;
 
-  const ordered = [...tickets].sort((a, b) =>
+  const filters = [
+    { id: "all", label: "All", rows: tickets },
+    { id: "mine", label: "Assigned to me", rows: tickets.filter(t => t.assigneeId === currentUserId) },
+    { id: "unassigned", label: "Unassigned", rows: tickets.filter(t => !t.assigneeId && t.status !== "resolved") },
+    { id: "waiting", label: "Waiting", rows: tickets.filter(t => t.status === "waiting") },
+  ];
+  const ordered = [...(filters.find(f => f.id === filter)?.rows ?? tickets)].sort((a, b) =>
     Number(a.status === "resolved") - Number(b.status === "resolved") ||
     (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3) ||
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -86,6 +94,8 @@ export function ITDesk({
       </header>
 
       <button className="btn" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh queue"}</button>
+      <div className="row queue-filters" role="group" aria-label="Filter queue">{filters.map(f =>
+        <button key={f.id} className="btn" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label} ({f.rows.length})</button>)}</div>
       <div className="desk-body">
         <div className="tablecard">
           {ordered.length === 0 ? (
@@ -151,13 +161,19 @@ export function ITDesk({
         </div>
 
         <aside className="cardlet">
-          <p className="label">Saved diagnostic paths</p>
+          <p className="label">Path Library</p>
           <p className="hint">Diagnostic paths the team has kept for quick reference. They do not change the live questions automatically.</p>
+          {!routes.length ? <p className="hint">No paths saved yet. Open a ticket to save its diagnostic path.</p> : null}
           <ul className="routes">
             {routes.map((r) => (
               <li key={r.id}>
-                <span className="route-name">{r.name}</span>
-                <span className="meta">{r.steps} steps · captured {r.uses}×</span>
+                <details><summary className="route-name">{r.name}</summary>
+                  <p>{r.category} · {r.diagnosis}</p>
+                  <ol>{r.path.map((p, i) => <li key={i}>{p.question}<br /><strong>{p.answer}</strong></li>)}</ol>
+                  <p className="hlabel">Troubleshooting attempts</p>
+                  {r.attempts.length ? <ul>{r.attempts.map((a, i) => <li key={i}>{a.title} · {a.outcome}</li>)}</ul> : <p className="hint">No attempts recorded.</p>}
+                  <p className="meta">Saved by {r.savedBy} · {new Date(r.savedAt).toLocaleString()}</p>
+                </details>
               </li>
             ))}
           </ul>

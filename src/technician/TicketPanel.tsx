@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { TicketDetail } from "@/types";
 import { api } from "@/api";
 import { Icon } from "@/components/Icon";
+import { Conversation } from "@/components/Conversation";
 import { Trail } from "@/components/Trail";
 
 export function TicketPanel({
@@ -136,12 +137,13 @@ export function TicketPanel({
           <div className="panel-main">
             <section>
               <p className="hlabel">In their words</p>
-              <p className="said">{ticket.description}</p>
+              <p className="said">{ticket.description || "No additional description provided."}</p>
               {ticket.userNote ? <p className="meta">Added note — {ticket.userNote}</p> : null}
             </section>
 
             <section>
               <p className="hlabel">Confirmed</p>
+              {!ticket.facts.length ? <p className="hint">No diagnostic facts recorded.</p> : null}
               <dl className="facts">
                 {ticket.facts.map((f, i) => (
                   <div className="fact" key={i}><dt>{f.label}</dt><dd>{f.value}</dd></div>
@@ -154,12 +156,16 @@ export function TicketPanel({
               <ul className="checks">
                 {ticket.attempts.length
                   ? ticket.attempts.map((a, i) => <li key={i}>{a.title}</li>)
-                  : <li className="muted">Nothing yet</li>}
+                  : <li className="muted">No troubleshooting steps recorded.</li>}
               </ul>
             </section>
 
+            <Conversation messages={ticket.messages} resolved={ticket.status === "resolved"} staff disabled={busy} requester={ticket.requester}
+              onSend={(body, wait) => act(() => api.sendTicketMessage(ticket.id, body, wait), wait ? "Message sent · waiting for reply" : "Message sent")} />
+            <button className="btn" disabled={busy} onClick={() => void load()}>Refresh conversation</button>
+
             <section>
-              <p className="hlabel">Internal notes</p>
+              <p className="hlabel">Internal notes · IT only</p>
               {ticket.notes.length ? (
                 <ul className="notes">
                   {ticket.notes.map((n, i) => (
@@ -218,14 +224,6 @@ export function TicketPanel({
               {ticket.status === "waiting" && ticket.assignee ? <button className="btn" disabled={busy}
                 onClick={() => act(() => api.updateTicket(ticket.id, { status: "assigned" }), "Work resumed")}>Resume work</button> : null}
               <button
-                className="btn" disabled={busy || ticket.status === "waiting"}
-                onClick={() => act(
-                  () => api.updateTicket(ticket.id, { status: "waiting" }),
-                  `Marked as waiting for ${ticket.requester.split(" ")[0]}`)}
-              >
-                Mark waiting for user
-              </button>
-              <button
                 className="btn btn-primary" disabled={busy}
                 onClick={() => act(
                   () => api.updateTicket(ticket.id, { status: "resolved" }),
@@ -236,9 +234,9 @@ export function TicketPanel({
               </> : <p role="status">Resolved</p>}
               <button
                 className="btn btn-plain" disabled={busy}
-                onClick={() => act(() => api.saveRoute(ticket.id), "Diagnostic path saved")}
+                onClick={() => act(() => api.saveRoute(ticket.id), "Saved to Path Library")}
               >
-                Save diagnostic path
+                Save to Path Library
               </button>
             </div>
           </div>

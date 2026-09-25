@@ -12,7 +12,7 @@ const ok = (r: any) => { expect(r.error).toBeNull(); return r.data; };
 test.beforeAll(async () => {
   ok(await db.from('organizations').insert({ id: org, name: 'Browser test', slug: org }));
   user = ok(await db.auth.admin.createUser({ email, password, email_confirm: true })).user.id;
-  ok(await db.from('users').update({ org_id: org, role: 'admin' }).eq('id', user));
+  ok(await db.from('users').insert({ id: user, org_id: org, role: 'admin', email, full_name: 'Live admin' }));
   ok(await db.from('diagnostic_categories').insert({ id: category, org_id: org, slug: 'connection', label: 'Connection', short_label: 'Connection' }));
   ok(await db.from('diagnoses').insert({ id: dx, org_id: org, key: 'connection', title: 'Check your connection.', short_label: 'Connection', node_label: 'Connection' }));
   ok(await db.from('troubleshooting_steps').insert({ diagnosis_id: dx, position: 1, title: 'Reconnect', detail: 'Reconnect the cable.' }));
@@ -24,8 +24,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   ok(await db.from('tickets').delete().eq('org_id', org));
   ok(await db.from('diagnostic_sessions').delete().eq('org_id', org));
-  ok(await db.from('diagnostic_trees').update({ root_node_id: null }).eq('id', tree));
-  ok(await db.from('diagnostic_trees').delete().eq('id', tree));
+  ok(await db.from('diagnostic_trees').update({ root_node_id: null }).eq('category_id', category));
+  ok(await db.from('diagnostic_trees').delete().eq('category_id', category));
   if (user) ok(await db.auth.admin.deleteUser(user));
   ok(await db.from('organizations').delete().eq('id', org));
 });
@@ -94,4 +94,79 @@ test('expired authorization returns to sign-in without exposing backend details'
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   await expect(page.getByLabel('Work email')).toBeVisible();
   await expect(page.getByText('Internal JWT parser detail')).toHaveCount(0);
+});
+
+test('draft preview creates no sessions and backend history is read-only', async ({ page }) => {
+  const before = ok(await db.from('diagnostic_sessions').select('id').eq('org_id', org));
+  let started = 0;
+  page.on('request', r => { if (/rpc\/(start_session|escalate_session)/.test(r.url())) started++; });
+  await page.getByRole('button', { name: 'Questions', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview saved questions' }).click();
+  const preview = page.getByRole('region', { name: 'Draft preview' });
+  await preview.getByRole('button', { name: 'Yes', exact: true }).click();
+  await expect(preview.getByRole('heading', { name: 'Connection', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: 'Exit preview' }).click();
+  expect(started).toBe(0);
+  expect(ok(await db.from('diagnostic_sessions').select('id').eq('org_id', org))).toEqual(before);
+  await page.getByLabel('Version history').selectOption({ index: 1 });
+  await expect(page.getByLabel('Answer text').first()).toBeDisabled();
+});
+
+test('live public reply moves waiting to needs review without exposing internal notes', async ({ page }) => {
+  const requesterEmail = `${randomUUID()}@resolve.test`, requesterPassword = `Test-${randomUUID()}!`;
+  const requesterId = ok(await db.auth.admin.createUser({ email: requesterEmail, password: requesterPassword, email_confirm: true })).user.id;
+  const requester = createClient(local.API_URL, local.ANON_KEY, { auth: { persistSession: false } });
+  try {
+    // Prove Auth alone grants no arbitrary organization access, even with metadata.
+    ok(await requester.auth.signInWithPassword({ email: requesterEmail, password: requesterPassword }));
+    expect(ok(await requester.from('users').select('id'))).toEqual([]);
+    await page.getByRole('button', { name: /^Sign out/ }).click();
+    await page.getByLabel('Work email').fill(requesterEmail);
+    await page.getByLabel('Password').fill(requesterPassword);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page.getByText('Your account is awaiting access.', { exact: true })).toBeVisible();
+    ok(await db.from('users').insert({ id: requesterId, org_id: org, role: 'end_user', email: requesterEmail, full_name: 'Live requester' }));
+    await page.getByRole('button', { name: 'Check access' }).click();
+    await expect(page.getByRole('heading', { name: "What's going wrong?" })).toBeVisible();
+    let s = ok(await requester.rpc('start_session', { p_category_id: category, p_description: '', p_device: 'Laptop', p_operating_system: 'macOS' }));
+    s = ok(await requester.rpc('answer_question', { p_session_id: s.id, p_option_id: s.node.options[0].id }));
+    const ticket = ok(await requester.rpc('escalate_session', { p_session_id: s.id, p_note: '' }));
+    await page.getByRole('button', { name: /^Sign out/ }).click();
+    await page.getByLabel('Work email').fill(email); await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.getByRole('button', { name: 'IT desk', exact: true }).click();
+    await page.getByRole('button', { name: `Open ${ticket.reference} from Live requester`, exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('No additional description provided.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Assign to me', exact: true }).click();
+    await dialog.getByLabel('Add an internal note').fill('Private live inventory');
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(dialog.getByLabel('Add an internal note')).toHaveValue('');
+    await page.route('**/rest/v1/rpc/send_ticket_message', route => route.fulfill({ status: 503, body: '{}' }), { times: 1 });
+    await dialog.getByLabel('Message', { exact: true }).fill('Please check the cable.');
+    await dialog.getByRole('button', { name: 'Send & wait for reply' }).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    await expect(dialog.getByLabel('Message', { exact: true })).toHaveValue('Please check the cable.');
+    await dialog.getByRole('button', { name: 'Send & wait for reply' }).click();
+    await expect(dialog.getByLabel('Message', { exact: true })).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: /^Sign out/ }).click();
+    await page.getByLabel('Work email').fill(requesterEmail); await page.getByLabel('Password').fill(requesterPassword);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await page.getByRole('button', { name: 'My requests', exact: true }).click();
+    await page.getByRole('button', { name: new RegExp(ticket.reference) }).click();
+    await expect(page.getByText('Please check the cable.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Private live inventory')).toHaveCount(0);
+    await page.getByLabel('Message', { exact: true }).fill('It is connected.');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(page.getByLabel('Message', { exact: true })).toHaveValue('');
+    await expect(page.locator('.requests .label').filter({ hasText: 'needs review' })).toBeVisible();
+    const row = ok(await requester.from('tickets').select('status,assignee_id').eq('id', ticket.id))[0];
+    expect(row.status).toBe('needs_review'); expect(row.assignee_id).toBe(user);
+  } finally {
+    await requester.auth.signOut();
+    ok(await db.from('tickets').delete().eq('requester_id', requesterId));
+    ok(await db.from('diagnostic_sessions').delete().eq('user_id', requesterId));
+    ok(await db.auth.admin.deleteUser(requesterId));
+  }
 });

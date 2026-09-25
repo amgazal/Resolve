@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Category, DiagnosisSummary, EditableNode, EditableOption, EditableTree } from "@/types";
+import type { Category, DiagnosisSummary, EditableNode, EditableOption, EditableTree, TreeValidation, TreeVersion, AdminAuditEvent } from "@/types";
 import { confirmLeave, hasUnsavedChanges, useUnsavedChanges } from "@/unsaved";
 import { api } from "@/api";
+import { DraftPreview } from "./DraftPreview";
 import { Icon } from "@/components/Icon";
 
 /**
@@ -46,6 +47,10 @@ export function TreeEditor({
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [validation, setValidation] = useState<TreeValidation | null>(null);
+  const [versions, setVersions] = useState<TreeVersion[]>([]);
+  const [audit, setAudit] = useState<AdminAuditEvent[]>([]);
+  const [preview, setPreview] = useState(false);
   const lock = useRef(false);
   const requestId = useRef(0);
 
@@ -124,61 +129,16 @@ export function TreeEditor({
     return lines.join("\n");
   }, [tree, nodeById, dxById]);
 
-  const orphans = useMemo(() => {
-    if (!tree?.rootNodeId) return [];
-    const reachable = new Set<string>([tree.rootNodeId]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const n of tree.nodes) {
-        if (!reachable.has(n.id)) continue;
-        for (const o of n.options) {
-          if (o.nextNodeId && !reachable.has(o.nextNodeId)) { reachable.add(o.nextNodeId); grew = true; }
-        }
-      }
-    }
-    return tree.nodes.filter((n) => !reachable.has(n.id));
-  }, [tree]);
-
-
-  const cycleNodes = useMemo(() => {
-    if (!tree) return [] as EditableNode[];
-    const byId = new Map(tree.nodes.map((node) => [node.id, node]));
-    const done = new Set<string>();
-    const onStack = new Set<string>();
-    const stack: string[] = [];
-    const inCycle = new Set<string>();
-
-    const visit = (nodeId: string) => {
-      if (done.has(nodeId)) return;
-      const node = byId.get(nodeId);
-      if (!node) return;
-
-      onStack.add(nodeId);
-      stack.push(nodeId);
-      for (const option of node.options) {
-        const next = option.nextNodeId;
-        if (!next) continue;
-        if (onStack.has(next)) {
-          const start = stack.indexOf(next);
-          stack.slice(start).forEach((id) => inCycle.add(id));
-        } else {
-          visit(next);
-        }
-      }
-      stack.pop();
-      onStack.delete(nodeId);
-      done.add(nodeId);
-    };
-
-    for (const node of tree.nodes) visit(node.id);
-    return tree.nodes.filter((node) => inCycle.has(node.id));
-  }, [tree]);
-
-  const unanswered = tree?.nodes.filter((node) => node.options.length === 0) ?? [];
-  const canPublish = Boolean(
-    tree?.rootNodeId && unanswered.length === 0 && orphans.length === 0 && cycleNodes.length === 0,
-  );
+  useEffect(() => {
+    if (!tree || !categoryId) return;
+    let cancelled = false;
+    setValidation(null); setPreview(false);
+    Promise.all([api.validateTree(tree.id), api.getTreeVersions(categoryId), api.getAdminAudit(categoryId)])
+      .then(([v, history, events]) => { if (!cancelled) { setValidation(v); setVersions(history); setAudit(events); } })
+      .catch((e: Error) => { if (!cancelled) onError(e.message); });
+    return () => { cancelled = true; };
+  }, [tree, categoryId, onError]);
+  const canPublish = tree?.status === "draft" && validation?.valid;
 
   return (
     <div className="editor">
@@ -187,7 +147,7 @@ export function TreeEditor({
           <p className="label">Question editor</p>
           <h1 className="col-title">Change what Resolve asks, without changing the app.</h1>
           <p className="hint">
-            You're editing a draft. Nothing here reaches anyone until you publish it.
+            {tree?.status === "draft" ? "You're editing a draft. Nothing here reaches anyone until you publish it." : "Published and archived questions are read-only. Open a draft to make changes."}
           </p>
         </div>
         <div className="editor-pick">
@@ -210,6 +170,11 @@ export function TreeEditor({
       {tree ? (
         <div className="editor-body">
           <div className="editor-main">
+            <button className="btn" disabled={busy} onClick={() => {
+              if (hasUnsavedChanges()) { onError("Save or discard your edits before previewing."); return; }
+              setPreview(true);
+            }}>Preview saved questions</button>
+            {preview ? <DraftPreview key={tree.id} tree={tree} diagnoses={diagnoses} onClose={() => setPreview(false)} /> : null}
             {tree.nodes.length === 0 ? (
               <div className="empty">
                 <p className="said">No questions yet.</p>
@@ -224,7 +189,7 @@ export function TreeEditor({
                 tree={tree}
                 diagnoses={diagnoses}
                 isRoot={tree.rootNodeId === node.id}
-                isOrphan={orphans.some((o) => o.id === node.id)}
+                isOrphan={Boolean(validation?.issues.some(i => i.code === "unreachable" && i.nodeId === node.id))}
                 busy={busy || tree.status !== "draft"}
                 onSaveNode={(patch) => run(() => api.saveNode(tree.id, { id: node.id, ...patch }))}
                 onDeleteNode={() => { if (window.confirm("Remove this question and its answers? Unsaved edits to it will be lost.")) void run(() => api.deleteNode(tree.id, node.id), "Question removed"); }}
@@ -250,6 +215,15 @@ export function TreeEditor({
           </div>
 
           <aside className="editor-side">
+            <div className="cardlet"><label className="field"><span className="label">Version history</span>
+              <select aria-label="Version history" value={tree.id} disabled={busy} onChange={e => { if (confirmLeave()) void run(() => api.getTree(e.target.value)); }}>
+                {versions.map(v => <option key={v.id} value={v.id}>v{v.version} · {v.status} · {new Date(v.publishedAt ?? v.createdAt).toLocaleDateString()}</option>)}
+              </select></label><p className="hint">Published and archived versions are read-only.</p>
+            </div>
+            <details className="cardlet"><summary>Recent admin activity</summary>
+              {audit.length ? <ul className="notes">{audit.map(a => <li key={a.id}><span className="who">{a.actor}</span>
+                <p>{a.action.replaceAll("_", " ")} · {a.target}</p><time dateTime={a.createdAt}>{new Date(a.createdAt).toLocaleString()}</time></li>)}</ul> : <p>No activity recorded yet.</p>}
+            </details>
             <div className="cardlet">
               <p className="label">The flow</p>
               <pre className="outline" tabIndex={0} aria-label="Diagnostic flow outline">{outline}</pre>
@@ -257,27 +231,10 @@ export function TreeEditor({
 
             <div className="cardlet">
               <p className="label">Before publishing</p>
-              <ul className="checklist">
-                <li className={tree.rootNodeId ? "ok" : "todo"}>
-                  {tree.rootNodeId ? "First question set" : "No first question yet"}
-                </li>
-                <li className={unanswered.length === 0 ? "ok" : "todo"}>
-                  {unanswered.length === 0
-                    ? "Every question has answers"
-                    : `No answers yet: ${unanswered.map((node) => node.shortLabel).join(", ")}`}
-                </li>
-                <li className={orphans.length === 0 ? "ok" : "todo"}>
-                  {orphans.length === 0
-                    ? "Every question is reachable"
-                    : `Unreachable: ${orphans.map((o) => o.shortLabel).join(", ")}`}
-                </li>
-                <li className={cycleNodes.length === 0 ? "ok" : "todo"}>
-                  {cycleNodes.length === 0
-                    ? "No loops in the flow"
-                    : `Loop detected around: ${cycleNodes.map((node) => node.shortLabel).join(", ")}`}
-                </li>
-              </ul>
-              {tree.status === "published" ? (
+              {validation ? validation.valid ? <p role="status">Ready to publish. Every question is reachable, has answers, and leads to a valid conclusion without loops.</p>
+                : <ul className="checklist">{validation.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul>
+                : <p role="status">Checking saved questions…</p>}
+              {tree.status !== "draft" ? (
                 <button
                   className="btn publish"
                   disabled={busy || !categoryId}

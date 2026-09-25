@@ -28,6 +28,7 @@ supabase/01_schema.sql
 supabase/02_policies.sql
 supabase/03_functions.sql
 supabase/04_hardening.sql
+supabase/05_product_completion.sql
 ```
 
 For a new database, choose either the SQL editor sequence above or the CLI migration below. They contain the same schema, policies, and functions; do not apply both to the same database.
@@ -43,21 +44,11 @@ npx supabase db push --dry-run
 npx supabase db push
 ```
 
-`supabase/config.toml` is checked in for local development; the CLI is pinned in npm dependencies. Review the dry run before pushing. The migrations include the initial schema and a separate hardening migration. Existing installations need the hardening migration, not a rerun of the bootstrap schema or seed. If the initial schema was installed manually, reconcile its migration history before using CLI migrations.
+`supabase/config.toml` is checked in for local development; the CLI is pinned in npm dependencies. Review the dry run before pushing. The migrations include the initial schema, hardening, and product completion. Existing installations should apply only missing migrations, not rerun the bootstrap schema or seed. If the initial schema was installed manually, reconcile its migration history before using CLI migrations.
 
-### Seed before creating Auth users
+### Bootstrap the catalog and provision accounts
 
-The schema's Auth trigger attaches a new account to the Resolve organization. That organization must exist first, so the bootstrap order is important:
-
-```text
-apply schema/policies/functions
-        ↓
-run the starter seed
-        ↓
-create Auth users
-        ↓
-promote technician/admin accounts deliberately
-```
+Auth identities do not automatically join an organization. Apply all migrations, seed a new catalog, create Auth identities, then explicitly provision membership through trusted SQL or server code. Never accept organization or role assignments from signup metadata.
 
 Run the starter seed from your own machine. Supply these variables to the command; the seed script does not load `.env` itself:
 
@@ -71,17 +62,16 @@ npm run seed
 
 The seed is intentionally a **bootstrap/dev-reset command**, not a production content migration tool. It refuses to run after diagnostic session history exists because diagnosis and troubleshooting-step definitions are not versioned yet.
 
-Now create real accounts in **Supabase → Authentication → Users**. New users start as `end_user`. Promote the accounts that need staff access in the SQL editor:
+Create real accounts in **Supabase → Authentication → Users**. They will see an awaiting-access screen until provisioned. In the trusted SQL editor, insert each membership using the verified Auth UUID and intended organization UUID:
 
 ```sql
-update public.users
-set role = 'technician'
-where email = 'technician@example.com';
-
-update public.users
-set role = 'admin'
-where email = 'admin@example.com';
+insert into public.users (id, org_id, email, full_name, role)
+select id, 'YOUR_ORGANIZATION_UUID'::uuid, email, 'Person Name', 'end_user'
+from auth.users
+where id = 'VERIFIED_AUTH_USER_UUID'::uuid;
 ```
+
+Choose `technician` or `admin` deliberately for staff accounts. Confirm the UUIDs and role before executing. Existing memberships are preserved by the migration; review earlier automatically assigned memberships separately. The browser cannot provision itself. An existing account can use **Check access** after provisioning.
 
 ## 3. Connect the frontend locally
 

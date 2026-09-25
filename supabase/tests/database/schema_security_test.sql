@@ -283,5 +283,17 @@ select ok(not has_column_privilege('authenticated', 'diagnostic_nodes', 'tree_id
 select throws_ok($$insert into organizations(name,slug) values (repeat('x',201),'oversized')$$,
   '23514', 'Text exceeds the allowed length', 'text limits are enforced on writes');
 
+select ok((select relrowsecurity from pg_class where oid = 'ticket_messages'::regclass), 'public messages have RLS');
+select ok((select relrowsecurity from pg_class where oid = 'admin_audit_events'::regclass), 'admin audit has RLS');
+select ok(not has_table_privilege('authenticated', 'ticket_messages', 'INSERT'), 'message sender cannot be forged by insert');
+select ok(not has_table_privilege('authenticated', 'ticket_messages', 'UPDATE'), 'public messages cannot be edited');
+select ok(not has_table_privilege('authenticated', 'ticket_messages', 'DELETE'), 'public messages cannot be deleted');
+select ok(not has_table_privilege('authenticated', 'admin_audit_events', 'INSERT'), 'audit actor cannot be forged');
+select ok(not has_table_privilege('authenticated', 'admin_audit_events', 'UPDATE'), 'audit cannot be edited');
+select ok(not has_table_privilege('authenticated', 'admin_audit_events', 'DELETE'), 'audit cannot be deleted');
+select ok(not has_function_privilege('anon', 'send_ticket_message(uuid,text,boolean)', 'EXECUTE'), 'anonymous cannot send messages');
+select ok(not has_function_privilege('anon', 'get_my_ticket(uuid)', 'EXECUTE'), 'anonymous cannot read request projection');
+select ok(not has_function_privilege('anon', 'validate_tree(uuid)', 'EXECUTE'), 'anonymous cannot validate trees');
+select ok(position('insert into' in lower(pg_get_functiondef('handle_new_auth_user()'::regprocedure))) = 0, 'signup does not create arbitrary membership');
 select * from finish();
 rollback;

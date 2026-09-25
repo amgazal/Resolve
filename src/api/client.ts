@@ -17,7 +17,7 @@ import { AUTH_EXPIRED_EVENT } from "./authEvents";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   Api, Catalog, DiagnosisSummary, EditableTree, Profile, QueueStats,
-  SavedRoute, SessionState, TicketDetail, TicketRow,
+  SavedRoute, SessionState, TicketDetail, TicketRow, RequesterTicket, RequesterTicketDetail, TreeValidation,
 } from "@/types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -77,8 +77,9 @@ export const supabaseApi: Api = {
       .from("users")
       .select("id, full_name, email, role")
       .eq("id", auth.user.id)
-      .single();
+      .maybeSingle();
     if (error) readable(error);
+    if (!data) return { id: auth.user.id, fullName: auth.user.email ?? "Account", email: auth.user.email ?? "", role: "unprovisioned" };
     return { id: data.id, fullName: data.full_name, email: data.email, role: data.role };
   },
 
@@ -153,6 +154,12 @@ export const supabaseApi: Api = {
       p_session_id: sessionId, p_note: note,
     }),
 
+  getMyTickets: () => rpc<RequesterTicket[]>("get_my_tickets"),
+  getMyTicket: (id) => rpc<RequesterTicketDetail>("get_my_ticket", { p_ticket_id: id }),
+  async sendTicketMessage(ticketId, body, waitForReply = false) {
+    await rpc("send_ticket_message", { p_ticket_id: ticketId, p_body: body, p_wait_for_reply: waitForReply });
+  },
+
   /* ------------------------------- tickets ------------------------------ */
 
   async getTickets(): Promise<TicketRow[]> {
@@ -163,7 +170,7 @@ export const supabaseApi: Api = {
       .limit(200);
     if (error) readable(error);
     return data.map((t) => ({
-      id: t.id, reference: t.reference, requester: t.requester_name, assignee: t.assignee_name,
+      id: t.id, reference: t.reference, requester: t.requester_name, assignee: t.assignee_name, assigneeId: t.assignee_id,
       categoryLabel: t.category_label, categoryShort: t.category_short,
       diagnosisLabel: t.diagnosis_label, subject: t.subject,
       priority: t.priority, status: t.status, createdAt: t.created_at,
@@ -174,22 +181,25 @@ export const supabaseApi: Api = {
     const { data: t, error } = await db().from("ticket_queue").select("*").eq("id", id).single();
     if (error) readable(error);
 
-    const [notes, session] = await Promise.all([
+    const [notes, session, messages] = await Promise.all([
       db().from("ticket_notes")
         .select("body, created_at, users(full_name)")
         .eq("ticket_id", id).order("created_at"),
       rpc<SessionState>("get_session_state", { p_session_id: t.session_id }),
+      db().from("ticket_messages").select("id, sender_name, sender_kind, body, created_at").eq("ticket_id", id).order("created_at").order("id"),
     ]);
 
     if (notes.error) readable(notes.error);
+    if (messages.error) readable(messages.error);
 
     return {
-      id: t.id, reference: t.reference, requester: t.requester_name, assignee: t.assignee_name,
+      id: t.id, reference: t.reference, requester: t.requester_name, assignee: t.assignee_name, assigneeId: t.assignee_id,
       categoryLabel: t.category_label, categoryShort: t.category_short,
       diagnosisLabel: t.diagnosis_label, subject: t.subject, priority: t.priority,
       status: t.status, createdAt: t.created_at,
       description: t.description, device: t.device, operatingSystem: t.operating_system,
       userNote: t.user_note,
+      messages: (messages.data ?? []).map((m) => ({ id: m.id, author: m.sender_name, senderKind: m.sender_kind, body: m.body, createdAt: m.created_at })),
       facts: session.facts,
       attempts: session.attempts,
       path: session.path.map((n) => ({ ...n, state: "known" as const })),
@@ -219,21 +229,26 @@ export const supabaseApi: Api = {
 
   getStats: () => rpc<QueueStats>("queue_stats"),
 
-  async getRoutes(): Promise<SavedRoute[]> {
-    const { data, error } = await db()
-      .from("saved_routes")
-      .select("id, name, step_titles, use_count")
-      .order("use_count", { ascending: false })
-      .limit(50);
-    if (error) readable(error);
-    return data.map((r) => ({
-      id: r.id, name: r.name, steps: r.step_titles?.length ?? 0, uses: r.use_count,
-    }));
-  },
+  getRoutes: () => rpc<SavedRoute[]>("get_path_library"),
 
   saveRoute: (ticketId) => rpc<SavedRoute>("save_route", { p_ticket_id: ticketId }),
 
   /* ------------------------------ authoring ----------------------------- */
+
+  getTree: (treeId) => rpc<EditableTree>("get_tree", { p_tree_id: treeId }),
+  validateTree: (treeId) => rpc<TreeValidation>("validate_tree", { p_tree_id: treeId }),
+  async getTreeVersions(categoryId) {
+    const { data, error } = await db().from("diagnostic_trees")
+      .select("id,version,status,created_at,published_at").eq("category_id", categoryId).order("version", { ascending: false });
+    if (error) readable(error);
+    return data.map((t) => ({ id: t.id, version: t.version, status: t.status, createdAt: t.created_at, publishedAt: t.published_at }));
+  },
+  async getAdminAudit(categoryId) {
+    const { data, error } = await db().from("admin_audit_events")
+      .select("id,actor_name,action,target,created_at").eq("category_id", categoryId).order("created_at", { ascending: false }).limit(50);
+    if (error) readable(error);
+    return data.map((e) => ({ id: e.id, actor: e.actor_name, action: e.action, target: e.target, createdAt: e.created_at }));
+  },
 
   async openDraft(categoryId): Promise<EditableTree> {
     const treeId = await rpc<string>("open_tree_draft", { p_category_id: categoryId });

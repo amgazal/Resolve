@@ -14,7 +14,7 @@ export interface Profile {
   id: string;
   fullName: string;
   email: string;
-  role: Role;
+  role: Role | "unprovisioned";
 }
 
 export interface Category {
@@ -100,6 +100,7 @@ export interface TicketRow {
   reference: string;
   requester: string;
   assignee: string | null;
+  assigneeId: string | null;
   categoryLabel: string;
   categoryShort: string;
   diagnosisLabel: string | null;
@@ -115,7 +116,30 @@ export interface TicketNote {
   createdAt: string;
 }
 
+export interface TicketMessage {
+  id: string;
+  author: string;
+  senderKind: "requester" | "staff";
+  body: string;
+  createdAt: string;
+}
+
+/** Deliberately excludes internal notes and staff-only context. */
+export interface RequesterTicket {
+  id: string;
+  reference: string;
+  subject: string;
+  status: TicketStatus;
+  categoryLabel: string;
+  createdAt: string;
+}
+export interface RequesterTicketDetail extends RequesterTicket {
+  description: string;
+  messages: TicketMessage[];
+}
+
 export interface TicketDetail extends TicketRow {
+  messages: TicketMessage[];
   description: string;
   device: string | null;
   operatingSystem: string | null;
@@ -136,8 +160,31 @@ export interface QueueStats {
 export interface SavedRoute {
   id: string;
   name: string;
-  steps: number;
-  uses: number;
+  category: string;
+  diagnosis: string;
+  path: { question: string; answer: string }[];
+  attempts: Attempt[];
+  savedBy: string;
+  savedAt: string;
+}
+
+export interface TreeValidation {
+  valid: boolean;
+  issues: { code: string; message: string; nodeId?: string }[];
+}
+export interface TreeVersion {
+  id: string;
+  version: number;
+  status: EditableTree["status"];
+  createdAt: string;
+  publishedAt: string | null;
+}
+export interface AdminAuditEvent {
+  id: string;
+  actor: string;
+  action: string;
+  target: string;
+  createdAt: string;
 }
 
 /* ------------------------------- authoring ------------------------------ */
@@ -201,6 +248,10 @@ export interface Api {
   recordAttempt(sessionId: string, stepId: string, outcome: AttemptOutcome): Promise<SessionState>;
   escalate(sessionId: string, note: string): Promise<{ id: string; reference: string }>;
 
+  getMyTickets(): Promise<RequesterTicket[]>;
+  getMyTicket(id: string): Promise<RequesterTicketDetail>;
+  sendTicketMessage(ticketId: string, body: string, waitForReply?: boolean): Promise<void>;
+
   getTickets(): Promise<TicketRow[]>;
   getTicket(id: string): Promise<TicketDetail>;
   updateTicket(
@@ -213,6 +264,10 @@ export interface Api {
   saveRoute(ticketId: string): Promise<SavedRoute>;
 
   /** Admin only — the tree editor. */
+  getTree(treeId: string): Promise<EditableTree>;
+  validateTree(treeId: string): Promise<TreeValidation>;
+  getTreeVersions(categoryId: string): Promise<TreeVersion[]>;
+  getAdminAudit(categoryId: string): Promise<AdminAuditEvent[]>;
   openDraft(categoryId: string): Promise<EditableTree>;
   getDiagnosisOptions(): Promise<DiagnosisSummary[]>;
   saveNode(treeId: string, node: Partial<EditableNode> & { id?: string }): Promise<EditableTree>;

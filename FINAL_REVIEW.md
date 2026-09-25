@@ -39,7 +39,7 @@ Record the tested revision and results when reviewing a release. If the local da
 Use separate end-user, technician, and admin accounts. Test direct API requests as well as the interface.
 
 - An end user cannot read another user's session or ticket, internal notes, or the staff queue.
-- A technician can assign a ticket, add an internal note, mark it waiting, and resolve it, but cannot edit trees.
+- A technician can assign a ticket, add an internal note, send a public message and wait for a reply, and resolve it, but cannot edit trees.
 - Admin edits stay within their organization and affect drafts only.
 - Publishing rejects missing roots, unanswered questions, unreachable questions, and cycles.
 - A session started before publication continues on its original question tree.
@@ -61,3 +61,27 @@ This review added explicit database grants, private policy helpers, text limits,
 Verified locally: `npm ci`; `npm run check` (also with Node 22.20.0); `npm audit` and `npm audit --omit=dev` (zero reported vulnerabilities); `npx supabase db reset --local --no-seed`; `npx supabase db lint --level warning`; `npx supabase test db`; `npm run test:integration`; `npm run test:browser`; and `npm run test:browser:live`. Supabase CLI 2.117.0 applied both migrations from scratch. Tests exercised the `/Resolve/` asset base path, and screenshots of loaded requester, technician and admin surfaces were inspected at mobile and desktop widths.
 
 Muted text was measured at 4.69:1 against paper and 5.43:1 against white. The browser suite checks overflow at 320, 375, 430, 768, 1024 and 1440 pixels. No hosted deployment or GitHub-hosted workflow run was performed. Chromium automation and axe assist the review; they do not certify accessibility or substitute for testing other browsers and assistive technologies. Hosted Supabase and GitHub Pages settings must still be verified when deploying.
+
+## Product completion review — September 25, 2026 (verification incomplete)
+
+Implemented public ticket conversations and My requests, personal queue filters, richer Path Library snapshots, a stronger handoff, local draft preview, shared backend validation, read-only version history, backend audit events, and explicit account provisioning. Requester projections omit internal notes. Message sender/status changes and audit actors are backend-owned; ordinary clients cannot edit or delete messages or audit events. Existing memberships and historical trees remain intact.
+
+Commands actually run during this pass:
+
+| Command | Observed result |
+| --- | --- |
+| `npm ci` | Passed; npm reported install-script approval warnings for esbuild/fsevents. |
+| `npm run check` | Final local run passed: TypeScript, 14 Vitest tests, production build. |
+| `npm audit` | Passed with network permission: 0 vulnerabilities. |
+| `npx supabase db reset --local --no-seed` | Applied all three migrations on the isolated local test stack. |
+| `npx supabase db lint --level warning` | Last run found no schema errors. |
+| `npx supabase test db` | 43 assertions passed. |
+| `npm run test:integration` | Earlier run passed 90 authenticated assertions. Later provisioning/impersonation assertions were added; final rerun was denied. |
+| `npm run test:browser` | Attempt failed with asset 404s while a concurrent production build replaced the shared output. Sequential rerun was denied; no new browser pass is claimed. |
+| `npm run test:browser:live` | Expanded to five tests; not run for this pass. |
+
+The final IT-only legacy-note policy was added after database verification, so the final migration must be reapplied and database checks repeated. The test code now includes technician → waiting → requester reply → needs review, failed-message draft retention, Path Library loading/deduplication, provisioning, preview isolation, validation/publication parity, and audit write denials. Coverage added is not equivalent to coverage executed.
+
+Before treating this pass as release-ready, run database lint/pgTAP/integration against the final migration, then run demo and live browser suites **sequentially**; both build into `dist`. Inspect the revised handoff, conversation, and history screens on mobile and desktop. No hosted deployment was performed.
+
+Intentionally omitted: optional rollback (archived versions stay read-only), a full invitation system (trusted provisioning is documented), and optional queue search. Conversations use explicit refresh, without realtime or notifications. Diagnosis/step definitions remain shared, demo state resets on reload, and legacy library entries may have no saved question/answer snapshot. The audit trail records authenticated administrative changes after this migration, not reconstructed historical or maintenance activity.

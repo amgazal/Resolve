@@ -23,8 +23,9 @@ export function Resolved({ session, onDone }: { session: SessionState; onDone: (
 }
 
 export function Sent({
-  reference, canSeeQueue, onView, onDone,
+  reference, canSeeQueue, onView, onDone, onRequests,
 }: {
+  onRequests: () => void;
   reference: string;
   canSeeQueue: boolean;
   onView: () => void;
@@ -41,6 +42,7 @@ export function Sent({
           off and on again.
         </p>
         <div className="row row-center">
+          <button className="btn btn-primary" onClick={onRequests}>View my requests</button>
           {canSeeQueue ? (
             <button className="btn btn-primary" onClick={onView}>
               See it in the IT desk<Icon name="arrow" size={17} />

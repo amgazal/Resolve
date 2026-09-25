@@ -10,8 +10,9 @@
 import type {
   Api, AttemptOutcome, Catalog, Diagnosis, DiagnosisSummary, EditableNode,
   EditableOption, EditableTree, Fact, Priority, Profile, Question, QueueStats,
-  SavedRoute, SessionState, Step, TicketDetail, TicketRow, TicketStatus, TrailNode,
+  SavedRoute, SessionState, Step, TicketDetail, TicketRow, TicketStatus, TrailNode, TicketMessage, RequesterTicket, AdminAuditEvent,
 } from "@/types";
+import { validateMockTree } from "./treeValidation";
 import { CATEGORIES, DEVICES, SYSTEMS } from "@/data/categories";
 import { DIAGNOSES } from "@/data/diagnoses";
 import { TREES } from "@/data/trees";
@@ -23,7 +24,7 @@ interface MOption { id: string; nodeId: string; label: string; factValue: string
 interface MTree { id: string; categoryId: string; version: number; status: "draft" | "published" | "archived"; rootLabel: string; rootNodeId: string | null }
 interface MDiagnosis { id: string; key: string; title: string; shortLabel: string; nodeLabel: string; priority: Priority; stepIds: string[] }
 interface MSession { id: string; userId: string; categoryId: string; treeId: string; description: string; device: string | null; operatingSystem: string | null; currentNodeId: string | null; diagnosisId: string | null; status: SessionState["status"]; answers: { nodeId: string; optionId: string }[]; attempts: { stepId: string; outcome: AttemptOutcome }[] }
-interface MTicket { id: string; sessionId: string; reference: string; requesterId: string; requester: string; assignee: string | null; categoryId: string; categoryLabel: string; categoryShort: string; diagnosisId: string | null; diagnosisLabel: string | null; subject: string; userNote: string; priority: Priority; status: TicketStatus; createdAt: string; notes: { author: string; body: string; createdAt: string }[] }
+interface MTicket { id: string; sessionId: string; reference: string; requesterId: string; requester: string; assignee: string | null; assigneeId: string | null; categoryId: string; categoryLabel: string; categoryShort: string; diagnosisId: string | null; diagnosisLabel: string | null; subject: string; userNote: string; priority: Priority; status: TicketStatus; createdAt: string; messages: TicketMessage[]; notes: { author: string; body: string; createdAt: string }[] }
 
 let seq = 1;
 const uid = (p: string) => `${p}_${seq++}`;
@@ -159,7 +160,7 @@ function cleanText(value: string, limit: number) {
 }
 const fail = (msg: string): never => { throw new Error(msg); };
 const me = () => current ?? fail("Sign in to continue");
-const staff = () => { const p = me(); if (p.role === "end_user") fail("The IT desk is for technicians"); return p; };
+const staff = () => { const p = me(); if (!["technician", "admin"].includes(p.role)) fail("The IT desk is for technicians"); return p; };
 const admin = () => { const p = me(); if (p.role !== "admin") fail("Only admins can edit trees"); return p; };
 const mine = (s: MSession) => { if (s.userId !== me().id) fail("Not your session"); return s; };
 const draftTree = (treeId: string) => {
@@ -204,11 +205,11 @@ function replay(args: {
 
   tickets.push({
     id: uid("tkt"), sessionId: s.id, reference: `RSV-${refCounter++}`,
-    requesterId: args.who.id, requester: args.who.fullName, assignee: args.assignee ?? null,
+    requesterId: args.who.id, requester: args.who.fullName, assignee: args.assignee ?? null, assigneeId: Object.values(PEOPLE).find(p => p.fullName === args.assignee)?.id ?? null,
     categoryId: cat.id, categoryLabel: cat.label, categoryShort: cat.shortLabel,
     diagnosisId: d.id, diagnosisLabel: d.shortLabel, subject: d.title.replace(/\.$/, ""),
     userNote: args.note, priority: d.priority, status: args.status ?? "new",
-    createdAt: new Date(Date.now() - args.minutes * 60000).toISOString(), notes: [],
+    createdAt: new Date(Date.now() - args.minutes * 60000).toISOString(), notes: [], messages: [],
   });
 }
 
@@ -241,17 +242,21 @@ replay({ who: { id: "u_tom", fullName: "Tom Bergström", email: "tom@northgate.t
   answers: ["Yes", "An accessory isn't detected"], attempted: 2,
   note: "It works fine on my colleague's machine.", status: "needs_review" });
 
-routes = [
-  { id: "r1", name: "Wi-Fi → Likely DNS", steps: 3, uses: 34 },
-  { id: "r2", name: "Login → Stale credentials", steps: 3, uses: 19 },
-];
-
 const rowOf = (t: MTicket): TicketRow => ({
-  id: t.id, reference: t.reference, requester: t.requester, assignee: t.assignee,
+  id: t.id, reference: t.reference, requester: t.requester, assignee: t.assignee, assigneeId: t.assigneeId,
   categoryLabel: t.categoryLabel, categoryShort: t.categoryShort,
   diagnosisLabel: t.diagnosisLabel, subject: t.subject,
   priority: t.priority, status: t.status, createdAt: t.createdAt,
 });
+
+const demoStarted = new Date().toISOString();
+const routeFingerprints = new Map<string, SavedRoute>();
+const auditEvents: (AdminAuditEvent & { categoryId: string })[] = [];
+function audit(treeId: string, action: string, target: string) {
+  auditEvents.unshift({ id: uid("audit"), categoryId: trees[treeId]!.categoryId, actor: me().fullName, action, target, createdAt: new Date().toISOString() });
+}
+const requesterRow = (t: MTicket): RequesterTicket => ({ id: t.id, reference: t.reference, subject: t.subject,
+  status: t.status, categoryLabel: t.categoryLabel, createdAt: t.createdAt });
 
 /* ------------------------------- the adapter ---------------------------- */
 
@@ -363,15 +368,37 @@ export const mockApi: Api = {
     const cat = categories[s.categoryId]!;
     const t: MTicket = {
       id: uid("tkt"), sessionId, reference: `RSV-${refCounter++}`,
-      requesterId: s.userId, requester: me().fullName, assignee: null,
+      requesterId: s.userId, requester: me().fullName, assignee: null, assigneeId: null,
       categoryId: cat.id, categoryLabel: cat.label, categoryShort: cat.shortLabel,
       diagnosisId: d.id, diagnosisLabel: d.shortLabel, subject: d.title.replace(/\.$/, ""),
       userNote: note, priority: d.priority, status: "new",
-      createdAt: new Date().toISOString(), notes: [],
+      createdAt: new Date().toISOString(), notes: [], messages: [],
     };
     tickets.unshift(t);
     s.status = "escalated";
     return wait({ id: t.id, reference: t.reference });
+  },
+
+  async getMyTickets() {
+    const user = me(); return wait(tickets.filter(t => t.requesterId === user.id).map(requesterRow));
+  },
+  async getMyTicket(id) {
+    const t = tickets.find(t => t.id === id && t.requesterId === me().id) ?? fail("Request not found");
+    return wait({ ...requesterRow(t), description: sessions[t.sessionId]?.description ?? "", messages: t.messages.map(m => ({ ...m })) });
+  },
+  async sendTicketMessage(ticketId, body, waitForReply = false) {
+    const user = me();
+    const t = tickets.find(t => t.id === ticketId) ?? fail("Request not found");
+    const owner = t.requesterId === user.id;
+    if (!owner) staff();
+    if (t.status === "resolved") fail("Resolved requests cannot receive replies");
+    const clean = cleanText(body, 4000);
+    if (!clean) fail("Write a message before sending it");
+    if (owner && waitForReply) fail("Only IT can request a reply");
+    t.messages.push({ id: uid("msg"), author: user.fullName, senderKind: owner ? "requester" : "staff", body: clean, createdAt: new Date().toISOString() });
+    if (owner && t.status === "waiting") t.status = "needs_review";
+    else if (!owner && waitForReply) t.status = "waiting";
+    return wait(undefined);
   },
 
   async getTickets() { staff(); return wait(tickets.map(rowOf)); },
@@ -385,7 +412,7 @@ export const mockApi: Api = {
       description: s.description, device: s.device, operatingSystem: s.operatingSystem,
       userNote: t!.userNote, facts: s.facts, attempts: s.attempts,
       path: s.path.map((n) => ({ ...n, state: "known" as const })),
-      notes: t!.notes,
+      notes: t!.notes, messages: [...t.messages],
     });
   },
 
@@ -396,13 +423,14 @@ export const mockApi: Api = {
       (t.status === "resolved" || !["assigned", "waiting", "resolved"].includes(patch.status))) {
       fail("That status change is not available");
     }
+    if (patch.status && patch.status !== t.status && ["waiting", "needs_review"].includes(patch.status)) fail("Use the conversation to request a reply");
     if (patch.assignToMe && (t.status === "resolved" || (t.assignee && t.assignee !== who.fullName))) {
       fail("This ticket cannot be assigned to you");
     }
     if (patch.status === "assigned" && !patch.assignToMe && !t.assignee) fail("Assign the ticket first");
     if (patch.status) t!.status = patch.status;
     if (patch.priority) t!.priority = patch.priority;
-    if (patch.assignToMe) t!.assignee = who.fullName;
+    if (patch.assignToMe) { t!.assignee = who.fullName; t!.assigneeId = who.id; }
     return wait(undefined);
   },
 
@@ -429,19 +457,32 @@ export const mockApi: Api = {
   async getRoutes() { staff(); return wait(routes); },
 
   async saveRoute(ticketId) {
-    staff();
-    const t = tickets.find((x) => x.id === ticketId) ?? fail("Ticket not found");
-    const name = `${t!.categoryShort} → ${t!.diagnosisLabel ?? t!.subject}`;
-    const found = routes.find((r) => r.name === name);
-    if (found) { found.uses += 1; return wait(found); }
-    const stepCount = sessions[t!.sessionId]!.attempts.length;
-    const route: SavedRoute = { id: uid("r"), name, steps: stepCount, uses: 1 };
-    routes = [route, ...routes];
+    const user = staff();
+    const t = tickets.find(t => t.id === ticketId) ?? fail("Ticket not found");
+    const session = sessions[t.sessionId]!;
+    const snapshot = {
+      category: t.categoryLabel, diagnosis: diagnoses[t.diagnosisId!]?.title ?? "Needs triage",
+      path: session.answers.map(a => ({ question: nodes[a.nodeId]!.question, answer: options[a.optionId]!.label })),
+      attempts: state(session.id).attempts,
+    };
+    const fingerprint = JSON.stringify(snapshot);
+    const existing = routeFingerprints.get(fingerprint);
+    if (existing) return wait(existing);
+    const route: SavedRoute = { id: uid("route"), name: `${t.categoryShort} → ${t.diagnosisLabel ?? "Needs triage"}`,
+      ...snapshot, savedBy: user.fullName, savedAt: new Date().toISOString() };
+    routes.unshift(route); routeFingerprints.set(fingerprint, route);
     return wait(route);
   },
 
   /* ----------------------------- authoring ---------------------------- */
 
+  async getTree(treeId) { admin(); if (!trees[treeId]) fail("Tree not found"); return wait(editableTree(treeId)); },
+  async validateTree(treeId) { admin(); return wait(validateMockTree(editableTree(treeId), new Set(Object.keys(diagnoses)))); },
+  async getTreeVersions(categoryId) {
+    admin(); return wait(Object.values(trees).filter(t => t.categoryId === categoryId).sort((a,b) => b.version - a.version)
+      .map(t => ({ id: t.id, version: t.version, status: t.status, createdAt: demoStarted, publishedAt: t.status === "draft" ? null : demoStarted })));
+  },
+  async getAdminAudit(categoryId) { admin(); return wait(auditEvents.filter(e => e.categoryId === categoryId).slice(0,50)); },
   async openDraft(categoryId) {
     admin();
     const existing = Object.values(trees).find((t) => t.categoryId === categoryId && t.status === "draft");
@@ -465,6 +506,7 @@ export const mockApi: Api = {
     });
     trees[draftId]!.rootNodeId = source!.rootNodeId ? map[source!.rootNodeId]! : null;
 
+    audit(draftId, "draft_created", `Version ${version}`);
     return wait(editableTree(draftId));
   },
 
@@ -503,6 +545,7 @@ export const mockApi: Api = {
       };
       if (!trees[treeId]!.rootNodeId) trees[treeId]!.rootNodeId = id;
     }
+    audit(treeId, node.id ? "question_edited" : "question_added", shortLabel);
     return wait(editableTree(treeId));
   },
 
@@ -513,6 +556,7 @@ export const mockApi: Api = {
     if (pointedAt.length) fail("Another answer still leads here. Repoint it first.");
     if (trees[treeId]!.rootNodeId === nodeId) trees[treeId]!.rootNodeId = null;
     currentNode.optionIds.forEach((o) => delete options[o]);
+    audit(treeId, "question_deleted", currentNode.shortLabel);
     delete nodes[nodeId];
     return wait(editableTree(treeId));
   },
@@ -527,6 +571,7 @@ export const mockApi: Api = {
     const factValue = cleanText(option.factValue ?? "", 1000);
     if (!label || !factValue) fail("Answer text and recorded value are required");
     if (option.nextNodeId) nodeInDraft(treeId, option.nextNodeId);
+    if (option.diagnosisId && !diagnoses[option.diagnosisId]) fail("Diagnosis not found");
     if (option.id) {
       const existingOption = options[option.id] ?? fail("Answer not found");
       if (existingOption.nodeId !== currentNode.id) fail("That answer does not belong to this question");
@@ -545,6 +590,7 @@ export const mockApi: Api = {
       };
       currentNode.optionIds.push(id);
     }
+    audit(treeId, "answer_changed", label);
     return wait(editableTree(treeId));
   },
 
@@ -555,6 +601,7 @@ export const mockApi: Api = {
     if (o.nodeId !== nodeId) fail("That answer does not belong to this question");
     const parent = nodeInDraft(treeId, nodeId);
     parent.optionIds = parent.optionIds.filter((x) => x !== optionId);
+    audit(treeId, "answer_deleted", o.label);
     delete options[optionId];
     return wait(editableTree(treeId));
   },
@@ -564,6 +611,7 @@ export const mockApi: Api = {
     const tree = draftTree(treeId);
     nodeInDraft(treeId, nodeId);
     tree.rootNodeId = nodeId;
+    audit(treeId, "root_changed", nodes[nodeId]!.shortLabel);
     return wait(editableTree(treeId));
   },
 
@@ -571,53 +619,14 @@ export const mockApi: Api = {
     admin();
     const tree = trees[treeId] ?? fail("Tree not found");
     if (tree.status !== "draft") fail("Only a draft can be published");
-    const rootNodeId = tree.rootNodeId;
-    if (rootNodeId === null) throw new Error("Set a first question before publishing");
-
-    const own = Object.values(nodes).filter((n) => n.treeId === treeId);
-    const unanswered = own.filter((n) => n.optionIds.length === 0);
-    if (unanswered.length) {
-      fail(`These questions have no answers yet: ${unanswered.map((n) => n.shortLabel).join(", ")}`);
-    }
-
-    const reachable = new Set<string>([rootNodeId]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const n of own) {
-        if (!reachable.has(n.id)) continue;
-        for (const oid of n.optionIds) {
-          const next = options[oid]!.nextNodeId;
-          if (next && !reachable.has(next)) { reachable.add(next); grew = true; }
-        }
-      }
-    }
-    const orphans = own.filter((n) => !reachable.has(n.id));
-    if (orphans.length) {
-      fail(`These questions can never be reached: ${orphans.map((n) => n.shortLabel).join(", ")}`);
-    }
-
-    const visiting = new Set<string>();
-    const visited = new Set<string>();
-    const hasCycle = (nodeId: string): boolean => {
-      if (visiting.has(nodeId)) return true;
-      if (visited.has(nodeId)) return false;
-      visiting.add(nodeId);
-      const node = nodes[nodeId]!;
-      for (const optionId of node.optionIds) {
-        const next = options[optionId]!.nextNodeId;
-        if (next && hasCycle(next)) return true;
-      }
-      visiting.delete(nodeId);
-      visited.add(nodeId);
-      return false;
-    };
-    if (hasCycle(rootNodeId)) fail("This draft contains a loop. Diagnostic paths must always move forward.");
+    const validation = validateMockTree(editableTree(treeId), new Set(Object.keys(diagnoses)));
+    if (!validation.valid) fail(validation.issues.map(i => i.message).join("; "));
 
     Object.values(trees)
       .filter((t) => t.categoryId === tree.categoryId && t.status === "published")
       .forEach((t) => { t.status = "archived"; });
     tree.status = "published";
+    audit(treeId, "tree_published", `Version ${tree.version}`);
 
     return wait(editableTree(treeId));
   },

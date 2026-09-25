@@ -29,7 +29,7 @@ test('requester answers, tries a fix, and sends the reviewed handoff', async ({ 
   await page.getByRole('button', { name: 'Still not working' }).click();
   await page.getByRole('button', { name: 'Skip ahead' }).click();
   await accessible(page);
-  await page.getByLabel('Anything else worth knowing?').fill('Started this morning.');
+  await page.getByLabel('Additional note (optional)').fill('Started this morning.');
   await page.getByRole('button', { name: 'Send to IT', exact: true }).click();
   await expect(page.getByText(/RSV-\d+/).first()).toBeVisible();
   await page.reload();
@@ -46,7 +46,7 @@ test('technician modal traps focus, accepts a note, resolves and restores focus'
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Mark resolved' })).toBeVisible();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: 'Save diagnostic path' })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Save to Path Library' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close ticket detail' })).toBeFocused();
   await dialog.getByLabel('Add an internal note').fill('Checked the connection.\nFollow-up complete.');
@@ -96,4 +96,69 @@ test('all surfaces fit narrow and desktop widths', async ({ page }, testInfo) =>
     }
     await page.getByRole('button', { name: /^Sign out/ }).click();
   }
+});
+
+test('public conversation returns waiting work to the personal queue and saves a useful path', async ({ page }) => {
+  await enter(page, 'IT Technician');
+  await page.getByRole('button', { name: /Open RSV-2481 from Maya/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Assign to me', exact: true }).click();
+  await dialog.getByLabel('Add an internal note').fill('Private cable inventory');
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(dialog.getByLabel('Add an internal note')).toHaveValue('');
+  await dialog.getByLabel('Message', { exact: true }).fill('Can you check the cable?');
+  await dialog.getByRole('button', { name: 'Send & wait for reply', exact: true }).click();
+  await expect(dialog.getByLabel('Message', { exact: true })).toHaveValue('');
+  await dialog.getByRole('button', { name: 'Save to Path Library' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved to Path Library' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: /^Waiting \(/ }).click();
+  await expect(page.getByRole('button', { name: /Open RSV-2481 from Maya/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Sign out/ }).click();
+  await page.getByRole('button', { name: /Requester/ }).click();
+  await page.getByRole('button', { name: 'My requests', exact: true }).click();
+  await page.getByRole('button', { name: /RSV-2481/ }).click();
+  await expect(page.getByText('Can you check the cable?', { exact: true })).toBeVisible();
+  await expect(page.getByText('Private cable inventory')).toHaveCount(0);
+  await page.getByLabel('Message', { exact: true }).fill('Cable is connected.');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByLabel('Message', { exact: true })).toHaveValue('');
+  await expect(page.locator('.requests .label').filter({ hasText: 'needs review' })).toBeVisible();
+  await accessible(page);
+  for (const width of [320, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('button', { name: /^Sign out/ }).click();
+  await page.getByRole('button', { name: /IT Technician/ }).click();
+  await page.getByRole('button', { name: /^Assigned to me \(/ }).click();
+  const row = page.getByRole('row').filter({ has: page.getByRole('button', { name: /Open RSV-2481 from Maya/ }) });
+  await expect(row).toContainText('Needs review');
+  await page.locator('.routes summary').first().click();
+  await expect(page.locator('.routes details').first()).toContainText('Saved by Jordan Ellis');
+  await expect(page.locator('.routes details ol li').first()).toBeVisible();
+});
+
+test('admin previews saved draft, validates changes, publishes and reads archived history', async ({ page }) => {
+  await enter(page, 'Administrator');
+  await page.getByRole('button', { name: 'Preview saved questions' }).click();
+  const preview = page.getByRole('region', { name: 'Draft preview' });
+  await expect(preview).toContainText('Preview / test mode');
+  await preview.getByRole('button', { name: 'Yes', exact: true }).click();
+  await preview.getByRole('button', { name: 'Restart preview' }).click();
+  await preview.getByRole('button', { name: 'Exit preview' }).click();
+  await page.getByRole('button', { name: 'Add a question', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Publish this version' })).toBeDisabled();
+  await expect(page.getByText('Unreachable: New question', { exact: false })).toBeVisible();
+  page.once('dialog', d => d.accept());
+  await page.getByRole('group', { name: 'New question', exact: true }).getByRole('button', { name: 'Remove this question', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Publish this version' })).toBeEnabled();
+  page.once('dialog', d => d.accept());
+  await page.getByRole('button', { name: 'Publish this version' }).click();
+  await expect(page.getByRole('button', { name: 'Start the next version' })).toBeVisible();
+  await page.getByLabel('Version history').selectOption({ label: await page.getByLabel('Version history').locator('option').filter({ hasText: 'archived' }).first().textContent() ?? '' });
+  await expect(page.getByLabel('Answer text').first()).toBeDisabled();
+  await page.getByText('Recent admin activity', { exact: true }).click();
+  await expect(page.getByText(/tree published ·/)).toBeVisible();
 });

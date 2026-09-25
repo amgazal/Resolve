@@ -18,24 +18,25 @@ export function Escalate({
   flash: (msg: string) => void;
 }) {
   const problem = session.diagnosis
-    ? session.diagnosis.title.replace(/\.$/, "")
+    ? session.diagnosis.title.replace("The printer isn't mapped to this device.", "The printer is not configured on this device.").replace(/\.$/, "")
     : "Not yet determined";
 
   const asText = [
-    `Reported: ${session.description || "(no description given)"}`,
+    `Reported: ${session.description || "No additional description provided."}`,
     `Device: ${[session.device, session.operatingSystem].filter(Boolean).join(" · ")}`,
     `Category: ${session.categoryLabel}`,
     `Assessment: ${problem}`,
     "",
-    "Confirmed",
+    "What we learned",
     ...session.facts.map((f) => `  ${f.label}: ${f.value}`),
     "",
-    "Already tried",
+    "Troubleshooting attempted",
     ...(session.attempts.length
       ? session.attempts.map((a) => `  ${a.title}`)
       : ["  (nothing yet)"]),
     "",
-    "Result: Issue persists",
+    "Outcome: Issue still not resolved",
+    `Additional note: ${note.trim() || "None"}`,
   ].join("\n");
 
   async function copy() {
@@ -57,7 +58,7 @@ export function Escalate({
 
       <article className="handoff">
         <div className="handoff-head">
-          <p className="label">Summary for the IT team</p>
+          <p className="label">This is what IT will receive</p>
           <button className="btn btn-plain btn-sm" onClick={copy}>
             <Icon name="copy" size={15} />Copy as text
           </button>
@@ -65,8 +66,8 @@ export function Escalate({
 
         <div className="handoff-body">
           <section>
-            <p className="hlabel">In their words</p>
-            <p className="said">{session.description || "No description given"}</p>
+            <p className="hlabel">Issue</p>
+            <p className="said">{session.description || "No additional description provided."}</p>
           </section>
 
           <dl className="facts">
@@ -75,11 +76,14 @@ export function Escalate({
               <dd>{[session.device, session.operatingSystem].filter(Boolean).join(" · ")}</dd>
             </div>
             <div className="fact"><dt>Category</dt><dd>{session.categoryLabel}</dd></div>
-            <div className="fact"><dt>Assessment</dt><dd className="strong">{problem}</dd></div>
+
           </dl>
 
+          <section className="handoff-assessment"><p className="hlabel">Assessment</p><p className="said"><strong>{problem}</strong></p></section>
+
           <section>
-            <p className="hlabel">Confirmed</p>
+            <p className="hlabel">What we learned</p>
+            {!session.facts.length ? <p className="hint">No diagnostic facts recorded.</p> : null}
             <dl className="facts">
               {session.facts.map((f, i) => (
                 <div className="fact" key={i}><dt>{f.label}</dt><dd>{f.value}</dd></div>
@@ -88,7 +92,7 @@ export function Escalate({
           </section>
 
           <section>
-            <p className="hlabel">Already tried</p>
+            <p className="hlabel">Troubleshooting attempted</p>
             <ul className="checks">
               {session.attempts.length
                 ? session.attempts.map((a, i) => <li key={i}>{a.title}</li>)
@@ -96,12 +100,12 @@ export function Escalate({
             </ul>
           </section>
 
-          <p className="result">Result — Issue persists</p>
+          <section className="handoff-outcome"><p className="hlabel">Outcome</p><p className="said"><strong>Issue still not resolved</strong></p></section>
         </div>
       </article>
 
       <div className="notefield">
-        <label className="label" htmlFor="note">Anything else worth knowing?</label>
+        <label className="label" htmlFor="note">Additional note (optional)</label>
         <textarea
           id="note" rows={3} value={note} maxLength={2000}
           onChange={(e) => setNote(e.target.value)}
@@ -113,7 +117,7 @@ export function Escalate({
         <button className="btn btn-primary btn-lg" onClick={onSend} disabled={busy}>
           {busy ? "Sending…" : "Send to IT"}
         </button>
-        <button className="btn btn-plain" onClick={onBack} disabled={busy}>Back to the steps</button>
+        <button className="btn btn-plain" onClick={onBack} disabled={busy}>Review troubleshooting steps</button>
       </div>
     </>
   );
