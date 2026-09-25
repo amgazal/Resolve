@@ -133,7 +133,7 @@ export function TicketPanel({
             {loadError ? <button className="btn" onClick={load}>Try again</button> : null}
           </div>
         ) : (
-          <div className="panel-body">
+          <div className="panel-body" tabIndex={0} role="region" aria-label="Ticket content">
           <div className="panel-main">
             <section>
               <p className="hlabel">In their words</p>

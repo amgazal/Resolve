@@ -49,6 +49,8 @@ test('technician modal traps focus, accepts a note, resolves and restores focus'
   await expect(dialog.getByRole('button', { name: 'Save to Path Library' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close ticket detail' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('region', { name: 'Ticket content' })).toBeFocused();
   await dialog.getByLabel('Add an internal note').fill('Checked the connection.\nFollow-up complete.');
   await dialog.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(dialog.locator('.notes p').filter({ hasText: 'Checked the connection.' })).toBeVisible();
