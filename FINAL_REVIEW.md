@@ -85,3 +85,34 @@ The final IT-only legacy-note policy was added after database verification, so t
 Before treating this pass as release-ready, run database lint/pgTAP/integration against the final migration, then run demo and live browser suites **sequentially**; both build into `dist`. Inspect the revised handoff, conversation, and history screens on mobile and desktop. No hosted deployment was performed.
 
 Intentionally omitted: optional rollback (archived versions stay read-only), a full invitation system (trusted provisioning is documented), and optional queue search. Conversations use explicit refresh, without realtime or notifications. Diagnosis/step definitions remain shared, demo state resets on reload, and legacy library entries may have no saved question/answer snapshot. The audit trail records authenticated administrative changes after this migration, not reconstructed historical or maintenance activity.
+
+## Final release verification — September 27, 2026
+
+**VERIFIED — ready for portfolio/deployment.** This section supersedes the incomplete product-completion results above. Verification began at `ee042bd`; the ticket scroll-region fix and its regression were committed by the repository owner as `d02519b` during verification. The final live-test locator correction is included in this working tree. No dependency, database, architecture, or feature changes were required.
+
+Commands ran sequentially, with no competing build/dev/preview processes. Initial process inspection found no stale Resolve/Vite/Playwright processes. The isolated `supabase_db_Resolve` database contained zero organizations but an older note policy, so `npx supabase db reset --local --no-seed` successfully reapplied all three current migrations. The unrelated lowercase `supabase_db_resolve` stack was not changed. Vite cleaned its generated output during each build.
+
+| Command | Final result |
+| --- | --- |
+| `npm ci` | PASS — 124 packages installed; install-script warnings did not prevent builds. |
+| `npm run check` | PASS — TypeScript, 14 Vitest tests, production build; repeated successfully after the UI fix. |
+| `npm audit` | PASS — 0 vulnerabilities. |
+| `npx supabase db lint --level warning` | PASS — no schema errors or warnings. |
+| `npx supabase test db` | PASS — 43 pgTAP assertions. |
+| `npm run test:integration` | PASS — 110 reported authenticated checks across five accounts and two organizations. |
+| `npm run test:browser` | PASS — 6 Chromium tests, including axe checks and 320–1440px overflow checks. |
+| `npm run test:browser:live` | PASS — 5 Chromium tests against local Supabase. |
+| `node /tmp/resolve-release-sanity.mjs` (temporary verification harness) | PASS — separate production builds and sole preview server for `/` and `/Resolve/`, asset fetches, reloads, and supplemental queue/message flow. |
+
+Two failures were investigated and corrected without weakening assertions or authorization:
+
+- The demo axe check found the ticket's scroll region could lack keyboard access while action controls were disabled. `TicketPanel` now makes that region focusable and labels it. A keyboard-focus regression assertion was added. The targeted test, application check, and complete six-test demo suite then passed.
+- The live failed-message test could not find its exact wrapping label after React populated the textarea child text. The trace showed the draft and textbox still present. The test now locates the textbox by accessible role and exact name; it still asserts draft retention, successful retry, requester visibility, hidden internal notes, `needs_review`, and preserved assignment. The failure was reproduced in isolation; the corrected targeted test and complete five-test live suite passed.
+
+The previous asset 404 did **not** reproduce in the clean sequential browser run. Both browser suites use `/Resolve/`. The independent production sanity check also verified HTML loads and reloads at `/` and `/Resolve/`; JS/CSS fetched with HTTP 200 and correct MIME types, reloads used valid HTTP 304 cache revalidation, and the relative favicon resolved with HTTP 200 under each base. No local asset returned an HTML fallback. The Pages workflow derives `/Resolve/` from the repository name, matching Vite's emitted `/Resolve/assets/...` URLs. No Vite, Playwright-server, or Pages-path fix was necessary. The temporary harness was corrected to resolve relative URLs, accept cache revalidation, and exclude external Google Fonts URLs from the same-origin prefix check; these were harness assumptions, not product failures.
+
+Representative coverage includes requester diagnosis/troubleshooting/escalation, My requests and public replies, internal-note privacy, all/personal/unassigned/waiting queue views, assignment, normal reply with status preserved, send-and-wait, Path Library saving, terminal resolution, admin validation/preview/history/audit, and archived read-only controls. Authenticated tests exercise ownership, cross-organization denial, sender forgery, technician/admin boundaries, unprovisioned signup metadata, and anonymous denials. Live preview checks confirm no support session is created.
+
+Remaining limits: verification used local Supabase and Chromium; hosted GitHub Actions/Pages and hosted Supabase settings were not deployed or exercised, and other browsers/assistive technologies were not certified. Conversations require refresh, provisioning uses trusted SQL/server membership assignment, and diagnosis/step definitions remain shared. No unresolved release-test failures remain.
+
+Files changed during this verification: `src/technician/TicketPanel.tsx`, `tests/browser/smoke.spec.ts` (both already included in `d02519b`), `tests/live/recovery.spec.ts`, and this document. Generated build metadata was restored to the current committed version.

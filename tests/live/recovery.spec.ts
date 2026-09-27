@@ -143,12 +143,12 @@ test('live public reply moves waiting to needs review without exposing internal 
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(dialog.getByLabel('Add an internal note')).toHaveValue('');
     await page.route('**/rest/v1/rpc/send_ticket_message', route => route.fulfill({ status: 503, body: '{}' }), { times: 1 });
-    await dialog.getByLabel('Message', { exact: true }).fill('Please check the cable.');
+    await dialog.getByRole('textbox', { name: 'Message', exact: true }).fill('Please check the cable.');
     await dialog.getByRole('button', { name: 'Send & wait for reply' }).click();
     await expect(dialog.getByRole('alert')).toBeVisible();
-    await expect(dialog.getByLabel('Message', { exact: true })).toHaveValue('Please check the cable.');
+    await expect(dialog.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('Please check the cable.');
     await dialog.getByRole('button', { name: 'Send & wait for reply' }).click();
-    await expect(dialog.getByLabel('Message', { exact: true })).toHaveValue('');
+    await expect(dialog.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('');
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /^Sign out/ }).click();
     await page.getByLabel('Work email').fill(requesterEmail); await page.getByLabel('Password').fill(requesterPassword);
@@ -157,9 +157,9 @@ test('live public reply moves waiting to needs review without exposing internal 
     await page.getByRole('button', { name: new RegExp(ticket.reference) }).click();
     await expect(page.getByText('Please check the cable.', { exact: true })).toBeVisible();
     await expect(page.getByText('Private live inventory')).toHaveCount(0);
-    await page.getByLabel('Message', { exact: true }).fill('It is connected.');
+    await page.getByRole('textbox', { name: 'Message', exact: true }).fill('It is connected.');
     await page.getByRole('button', { name: 'Send message', exact: true }).click();
-    await expect(page.getByLabel('Message', { exact: true })).toHaveValue('');
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('');
     await expect(page.locator('.requests .label').filter({ hasText: 'needs review' })).toBeVisible();
     const row = ok(await requester.from('tickets').select('status,assignee_id').eq('id', ticket.id))[0];
     expect(row.status).toBe('needs_review'); expect(row.assignee_id).toBe(user);
