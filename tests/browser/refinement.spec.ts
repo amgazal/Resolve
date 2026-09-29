@@ -31,17 +31,17 @@ test('attachment is deferred until final review and landing stays uncluttered', 
 test('initial evidence stays local, review edits persist, and a skipped handoff is truthful', async ({ page }) => {
   await enter(page);
   await page.getByLabel('Describe the problem').fill('Wrong description');
-  await page.getByLabel('Add a screenshot or photo (optional)').setInputFiles('tests/fixtures/support.png');
-  await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
   await diagnose(page);
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
-  await expect(page.getByRole('region', { name: 'Supporting screenshots and photos' })).toBeVisible();
-  await page.getByRole('button', { name: 'Edit issue details', exact: true }).click();
+  await expect(page.getByLabel('Attach image')).toBeVisible();
+  await page.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
+  await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
   await page.getByLabel('Problem description').fill('Corrected Wi-Fi report');
-  await page.getByRole('region', { name: 'Edit issue details', exact: true }).getByRole('combobox', { name: 'Device', exact: true }).selectOption('Phone');
-  await page.getByRole('region', { name: 'Edit issue details', exact: true }).getByRole('combobox', { name: 'System', exact: true }).selectOption('iOS');
+  await page.locator('.issue-editor').getByRole('combobox', { name: 'Device', exact: true }).selectOption('Phone');
+  await page.locator('.issue-editor').getByRole('combobox', { name: 'System', exact: true }).selectOption('iOS');
   await page.getByRole('button', { name: 'Save details' }).click();
-  await expect(page.getByRole('button', { name: 'Edit issue details', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Edit', exact: true }).first()).toBeFocused();
   await expect(page.locator('.handoff')).toContainText('Corrected Wi-Fi report');
   await expect(page.locator('.handoff')).toContainText('Phone · iOS');
   await page.getByLabel('Additional note for IT (optional)').fill('The exact error appears in the screenshot.');
@@ -63,19 +63,19 @@ test('review removal, invalid files, and confirmed restart release staged images
   await page.exposeFunction('trackRevoke', (url: string) => revoked.push(url));
   await page.addInitScript(() => { const original = URL.revokeObjectURL; URL.revokeObjectURL = url => { (window as unknown as { trackRevoke: (s: string) => void }).trackRevoke(url); original(url); }; });
   await enter(page);
-  const picker = page.getByLabel('Add a screenshot or photo (optional)');
+  await diagnose(page);
+  await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
+  const picker = page.getByLabel('Attach image');
   await picker.setInputFiles({ name: 'bad.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') });
   await expect(page.getByRole('alert')).toContainText('JPEG, PNG, or WebP');
   await picker.setInputFiles('tests/fixtures/support.png');
   await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
-  await diagnose(page);
-  await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
   await page.getByRole('button', { name: 'Remove support.png' }).click();
   await expect(page.getByRole('region', { name: 'Supporting screenshots and photos' })).toHaveCount(0);
   await picker.setInputFiles('tests/fixtures/support.png');
   await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'Change category / Start over' }).click();
+  await page.getByRole('button', { name: 'Start over', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: "What's going wrong?" })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove support.png' })).toHaveCount(0);
   expect(revoked.length).toBeGreaterThanOrEqual(2);
@@ -87,7 +87,7 @@ test('answer correction clears attempts and lets the requester work backward saf
   await page.getByRole('button', { name: 'Still not working' }).click();
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'Change my last answer' }).click();
+  await page.getByRole('button', { name: 'Review answers', exact: true }).click();
   await page.getByRole('button', { name: 'VPN or security tool', exact: true }).click();
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
   await expect(page.locator('.handoff')).toContainText('No troubleshooting attempted');
@@ -130,8 +130,6 @@ test('visual review of changed screens at desktop, tablet, phone and enlarged te
   }
   await enter(page);
   await page.getByLabel('Describe the problem').fill('My verification code is rejected.');
-  await page.getByLabel('Add a screenshot or photo (optional)').setInputFiles('tests/fixtures/support.png');
-  await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
   await review('landing');
   await page.getByRole('button', { name: 'Login & Account' }).click();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
@@ -141,8 +139,10 @@ test('visual review of changed screens at desktop, tablet, phone and enlarged te
   await expect(page.locator('.step.is-now')).toBeVisible();
   await review('troubleshooting');
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
+  await page.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
+  await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
   await review('handoff');
-  await page.getByRole('button', { name: 'Edit issue details', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
   await review('editing');
   await page.getByRole('button', { name: 'Cancel details edit' }).click();
   await page.getByRole('button', { name: 'Send to IT', exact: true }).click();

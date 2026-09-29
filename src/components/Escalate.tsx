@@ -97,10 +97,10 @@ export function Escalate({
             <p className="said">{session.description || "No additional description provided."}</p>
           </section>
 
-          <div className="facts fact-grid">
+          <dl className="facts fact-grid">
             <div className="fact"><dt>Device</dt><dd>{[session.device, session.operatingSystem].filter(Boolean).join(" · ")}</dd></div>
             <div className="fact"><dt>Category</dt><dd>{session.categoryLabel}</dd></div>
-          </div>
+          </dl>
 
           <section className="handoff-assessment">
             <div className="summary-row"><p className="hlabel">Assessment</p></div>
