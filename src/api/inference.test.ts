@@ -7,6 +7,9 @@ describe("description suggestions", () => {
     ["my verification code doesn't work on my iphone", { categorySlug: "login", device: "Phone", operatingSystem: "iOS" }],
     ["printer queue is stuck on my windows laptop", { categorySlug: "printing", device: "Laptop", operatingSystem: "Windows" }],
     ["an app crashes", { categorySlug: "software" }],
+    ["my trackpad stopped clicking", { categorySlug: "hardware" }],
+    ["my MacBook trackpad stopped clicking", { categorySlug: "hardware", device: "Laptop", operatingSystem: "macOS" }],
+    ["my Windows laptop touchpad isn't working", { categorySlug: "hardware", device: "Laptop", operatingSystem: "Windows" }],
   ])("infers strong context from %s", (text, expected) => {
     expect(inferDescription(text)).toEqual(expected);
   });

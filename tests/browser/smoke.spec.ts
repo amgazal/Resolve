@@ -12,6 +12,12 @@ async function accessible(page: Page) {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   expect(results.violations).toEqual([]);
 }
+async function noMobileOverflow(page: Page) {
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 850 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), `overflow at ${width}`).toBe(true);
+  }
+}
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => { throw error; });
   page.on('console', (message) => { if (message.type() === 'error') throw new Error(message.text()); });
@@ -97,6 +103,39 @@ test('all surfaces fit narrow and desktop widths', async ({ page }, testInfo) =>
     }
     await page.getByRole('button', { name: /^Sign out/ }).click();
   }
+});
+
+test('mobile controls stay stable while focused across requester, technician, and admin', async ({ page }) => {
+  await enter(page, 'Requester');
+  await page.getByLabel('Describe the problem').focus();
+  await noMobileOverflow(page);
+  await page.getByRole('button', { name: 'Wi-Fi & Network' }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByRole('button', { name: 'Yes', exact: true }).click();
+  await page.getByRole('button', { name: 'Yes', exact: true }).click();
+  await page.getByRole('button', { name: 'All of them', exact: true }).click();
+  await page.getByRole('button', { name: 'Nothing changed', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
+  await page.getByLabel('Note for IT (optional)').focus();
+  await noMobileOverflow(page);
+
+  await page.getByRole('button', { name: /^Sign out/ }).click();
+  await enter(page, 'IT Technician');
+  await page.locator('.queue-card').first().click();
+  await page.getByLabel('Message', { exact: true }).focus();
+  await noMobileOverflow(page);
+  await page.getByLabel('Add an internal note').focus();
+  await noMobileOverflow(page);
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: /^Sign out/ }).click();
+  await enter(page, 'Administrator');
+  await page.getByLabel('Answer text').first().focus();
+  await noMobileOverflow(page);
+  await page.getByLabel('What this records').first().focus();
+  await noMobileOverflow(page);
+  await page.getByLabel('Where this answer leads').first().focus();
+  await noMobileOverflow(page);
 });
 
 test('public conversation returns waiting work to the personal queue and saves a useful path', async ({ page }) => {

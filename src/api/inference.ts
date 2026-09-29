@@ -16,7 +16,7 @@ export function inferDescription(text: string): DescriptionSuggestions {
   else if (has(value, /\bpassword\b|\blog ?in\b|\bsign[ -]?in\b|\bmfa\b|\bverification code\b|\blocked out\b/)) suggestion.categorySlug = "login";
   else if (has(value, /\bprinter\b|\bprinting\b|\bprint queue\b/)) suggestion.categorySlug = "printing";
   else if (has(value, /\binstall(?:er|ation)?\b|\bapp crashes?\b|\bsoftware\b|\bapplication\b/)) suggestion.categorySlug = "software";
-  else if (has(value, /\bscreen\b|\bkeyboard\b|\bmouse\b|\bbattery\b|\bcharger\b|\bmonitor\b|\busb\b/)) suggestion.categorySlug = "hardware";
+  else if (has(value, /\bscreen\b|\bkeyboard\b|\bmouse\b|\btrackpad\b|\btouchpad\b|\bbattery\b|\bcharger\b|\bmonitor\b|\busb\b/)) suggestion.categorySlug = "hardware";
 
   if (has(value, /\bmacbook\b/)) {
     suggestion.device = "Laptop";

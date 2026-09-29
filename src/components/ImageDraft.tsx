@@ -39,8 +39,8 @@ export function ImageDraft({ draft, disabled = false, initial = false, previewsO
   const pickerLabel = inputLabel ?? 'Attach image';
   return <div className="image-draft">
     {!previewsOnly ? <>
-      <label className="field attachment-picker"><span className="label">{pickerLabel}</span>
-        <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={disabled || draft.busy || draft.images.length >= 3}
+      <label className="attachment-picker"><span className="image-add-button">+ {pickerLabel}</span>
+        <input className="image-file-input" aria-label={pickerLabel} type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={disabled || draft.busy || draft.images.length >= 3}
           onChange={e => { const files = Array.from(e.currentTarget.files ?? []); e.currentTarget.value = ''; void draft.select(files); }} />
       </label>
       <p className="hint">{pickerOnly ? 'Up to 3 images. Don’t include passwords or verification codes.' : 'Up to 3 JPG, PNG or WebP images. Don’t include passwords or verification codes.'}</p>
