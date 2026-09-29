@@ -17,7 +17,8 @@
     "test:integration": "node --import tsx tests/integration/roles.ts",
     "test:browser:live": "playwright test -c playwright.live.config.ts",
     "test:paths": "playwright test -c playwright.paths.config.ts",
-    "cleanup:images": "tsx scripts/cleanup-ticket-images.ts"
+    "cleanup:images": "tsx scripts/cleanup-ticket-images.ts",
+    "test:production": "playwright test -c playwright.production.config.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

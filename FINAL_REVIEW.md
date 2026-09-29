@@ -1,6 +1,6 @@
 # Release pass — 2026-09-29
 
-**NOT VERIFIED — hosted Supabase is not connected or accessible for migration, Storage, function, cleanup, or authenticated production verification.** Local checks below pass; the custom-domain static/demo deployment is being verified separately. Historical review notes remain below.
+**NOT VERIFIED — hosted Supabase is not connected or accessible for migration, Storage, function, cleanup, or authenticated production verification.** Local checks below pass; the custom-domain static/demo deployment also passes the production checks below. Historical review notes remain below.
 
 ## Changes and findings
 
@@ -29,11 +29,20 @@
 | `npm run test:integration` | PASS | 144 authenticated role/image/workflow assertions |
 | `npm run test:browser:live` | PASS | 6 local live scenarios |
 | Privileged-key signature scan | PASS | 0 secret-key or service-role JWT matches in built JS |
+| `npm run test:production` | PASS | 7 demo-only Chromium scenarios on the canonical domain |
 | Hosted Supabase checks | NOT RUN | Management access and configured project unavailable |
 
 The live browser flow includes staff PNG upload and ordinary Send preserving Assigned, failed Send & wait preserving its draft, retry to Waiting, requester private-image viewing and JPEG reply to Needs review, preserved assignee and hidden internal notes. Integration cases include requester PNG ingestion, staff images, second-requester/other-org/anonymous denial, direct Storage upload denial, unpublished image denial, invalid MIME/SVG/forged bytes/oversize/count/path denial, terminal-ticket reservation denial, and literal malicious filenames.
 
 Coverage limits: Chromium only; no Safari/Firefox/physical-device certification or native 200% text-zoom audit. Token refresh is provided by Supabase's SDK; this pass tests expired authorization and auth-ended races, not a timed hosted token-renewal soak. Existing list limits (200 desk tickets and Data API page limits) remain. Source images are decoded before the 48-megapixel guard, so exceptionally compressed inputs may temporarily consume browser memory. Attachments are added to existing requests in the public conversation, after escalation. Large photographs whose lossless normalization exceeds 5 MiB need a smaller source. No claim of hosted support or exhaustive defect absence is made.
+
+## Production smoke — https://resolve.amgazal.com/
+
+Release commit `e42fb44b55360cd44003183950b1322f63b376da` deployed successfully in [Pages run 36552607458](https://github.com/amgazal/Resolve/actions/runs/36552607458). GitHub's deployment record identifies the same SHA. The production HTML now references `./assets/index-COifN8WI.js` and `./assets/index-DnjRcb8a.css`; both return 200 with correct MIME. The favicon returns 200/image/svg+xml. `https://amgazal.github.io/Resolve/` redirects 301 to the custom-domain root.
+
+All seven existing demo browser journeys were run directly against the canonical HTTPS URL using `npm run test:production`: requester diagnosis/fix/handoff/reload, technician notes/resolution/focus, public Send and Send & wait/requester reply, image PNG/JPEG normalization/viewer, mobile widths/landscape, admin validation/preview/history, and representative axe checks. Console-error and page-exception listeners remained clean. These are **demo tests** and do not establish hosted authentication or persistent image support. The production configuration deliberately uses demo-role controls and cannot sign into a live account.
+
+A follow-up documentation/test-configuration commit records this result; it changes no application or database behavior.
 
 ## Files changed
 
