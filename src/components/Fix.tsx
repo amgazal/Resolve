@@ -1,4 +1,5 @@
 import type { SessionState } from "@/types";
+import { stepGuidance, stepTitle, authenticationDiagnoses } from "@/data/guidance";
 import { Icon } from "./Icon";
 
 export function Fix({
@@ -26,6 +27,7 @@ export function Fix({
         </p>
       </header>
 
+      {authenticationDiagnoses.has(dx.key) ? <p className="security-hint">Never paste passwords, verification codes, or recovery codes into Resolve notes or messages.</p> : null}
       <ol className="steps">
         {dx.steps.map((s, i) => {
           const stateName = i < activeIndex ? "done" : i === activeIndex ? "now" : "later";
@@ -35,10 +37,11 @@ export function Fix({
                 {stateName === "done" ? <Icon name="check" size={14} /> : i + 1}
               </span>
               <div className="step-body">
-                <p className="step-title">{s.title}</p>
+                <p className="step-title">{stepTitle(dx.key, s)}</p>
                 {stateName === "now" ? (
                   <>
-                    <p className="step-detail">{s.detail}</p>
+                    <p className="label active-step-label">Current step{session.operatingSystem && session.operatingSystem !== "Not sure" ? ` · ${session.operatingSystem}` : ""}</p>
+                    <p className="step-detail">{stepGuidance(dx.key, s, session.operatingSystem)}</p>
                     {phase === "idle" ? (
                       <button className="btn btn-primary" onClick={() => setPhase("trying")}>
                         Try this
@@ -58,7 +61,7 @@ export function Fix({
                     )}
                   </>
                 ) : stateName === "done" ? (
-                  <p className="step-detail muted">Tried — didn't fix it.</p>
+                  <p className="step-detail muted">Tried — didn't fix the issue.</p>
                 ) : null}
               </div>
             </li>

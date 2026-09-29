@@ -1,10 +1,12 @@
 import type { Catalog } from "@/types";
+import { ImageDraft, type ImageDraftState } from "./ImageDraft";
 import { Icon } from "./Icon";
 
 export function Landing({
   catalog, description, setDescription, categoryId, setCategoryId,
-  device, setDevice, os, setOs, onStart, busy, firstName,
+  device, setDevice, os, setOs, onStart, busy, firstName, images,
 }: {
+  images: ImageDraftState;
   catalog: Catalog;
   description: string;
   setDescription: (v: string) => void;
@@ -38,6 +40,8 @@ export function Landing({
             aria-label="Describe the problem"
           />
         </div>
+
+        <ImageDraft draft={images} disabled={busy} initial />
 
         <p className="label label-gap rise" style={{ animationDelay: "190ms" }}>
           Which of these is closest?
@@ -73,7 +77,7 @@ export function Landing({
         </div>
 
         <div className="cta rise" style={{ animationDelay: "290ms" }}>
-          <button className="btn btn-primary btn-lg" disabled={!categoryId || busy} onClick={onStart}>
+          <button className="btn btn-primary btn-lg" disabled={!categoryId || busy || images.busy} onClick={onStart}>
             {busy ? "One moment…" : "Start"}
             {busy ? null : <Icon name="arrow" size={18} />}
           </button>

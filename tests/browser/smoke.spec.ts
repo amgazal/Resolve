@@ -29,7 +29,7 @@ test('requester answers, tries a fix, and sends the reviewed handoff', async ({ 
   await page.getByRole('button', { name: 'Still not working' }).click();
   await page.getByRole('button', { name: 'Skip ahead' }).click();
   await accessible(page);
-  await page.getByLabel('Additional note (optional)').fill('Started this morning.');
+  await page.getByLabel('Additional note for IT (optional)').fill('Started this morning.');
   await page.getByRole('button', { name: 'Send to IT', exact: true }).click();
   await expect(page.getByText(/RSV-\d+/).first()).toBeVisible();
   await page.reload();
@@ -125,7 +125,7 @@ test('public conversation returns waiting work to the personal queue and saves a
   await page.getByLabel('Message', { exact: true }).fill('Cable is connected.');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByLabel('Message', { exact: true })).toHaveValue('');
-  await expect(page.locator('.requests .label').filter({ hasText: 'needs review' })).toBeVisible();
+  await expect(page.locator('.requests .label').filter({ hasText: 'IT is reviewing your reply' })).toBeVisible();
   await accessible(page);
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 900 });

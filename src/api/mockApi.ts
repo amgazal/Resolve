@@ -26,7 +26,7 @@ interface MOption { id: string; nodeId: string; label: string; factValue: string
 interface MTree { id: string; categoryId: string; version: number; status: "draft" | "published" | "archived"; rootLabel: string; rootNodeId: string | null }
 interface MDiagnosis { id: string; key: string; title: string; shortLabel: string; nodeLabel: string; priority: Priority; stepIds: string[] }
 interface MSession { id: string; userId: string; categoryId: string; treeId: string; description: string; device: string | null; operatingSystem: string | null; currentNodeId: string | null; diagnosisId: string | null; status: SessionState["status"]; answers: { nodeId: string; optionId: string }[]; attempts: { stepId: string; outcome: AttemptOutcome }[] }
-interface MTicket { id: string; sessionId: string; reference: string; requesterId: string; requester: string; assignee: string | null; assigneeId: string | null; categoryId: string; categoryLabel: string; categoryShort: string; diagnosisId: string | null; diagnosisLabel: string | null; subject: string; userNote: string; priority: Priority; status: TicketStatus; createdAt: string; messages: TicketMessage[]; notes: { author: string; body: string; createdAt: string }[] }
+interface MTicket { id: string; sessionId: string; reference: string; requesterId: string; requester: string; assignee: string | null; assigneeId: string | null; categoryId: string; categoryLabel: string; categoryShort: string; diagnosisId: string | null; diagnosisLabel: string | null; subject: string; userNote: string; priority: Priority; status: TicketStatus; createdAt: string; resolvedAt?: string; messages: TicketMessage[]; notes: { author: string; body: string; createdAt: string }[] }
 
 let seq = 1;
 const uid = (p: string) => `${p}_${seq++}`;
@@ -258,7 +258,8 @@ function audit(treeId: string, action: string, target: string) {
   auditEvents.unshift({ id: uid("audit"), categoryId: trees[treeId]!.categoryId, actor: me().fullName, action, target, createdAt: new Date().toISOString() });
 }
 const requesterRow = (t: MTicket): RequesterTicket => ({ id: t.id, reference: t.reference, subject: t.subject,
-  status: t.status, categoryLabel: t.categoryLabel, createdAt: t.createdAt });
+  status: t.status, categoryLabel: t.categoryLabel, createdAt: t.createdAt,
+  lastActivityAt: t.messages.reduce((latest, m) => m.createdAt > latest ? m.createdAt : latest, t.resolvedAt ?? t.createdAt) });
 
 /* ------------------------------- the adapter ---------------------------- */
 
@@ -297,6 +298,14 @@ export const mockApi: Api = {
     return wait(state(id));
   },
 
+  async updateSessionDetails(sessionId, details) {
+    const s = mine(sessions[sessionId] ?? fail("Session not found"));
+    if (s.status !== "in_progress") fail("This session is no longer active");
+    const values = { description: cleanText(details.description, 4000), device: cleanText(details.device, 200), operatingSystem: cleanText(details.operatingSystem, 200) };
+    Object.assign(s, values);
+    return wait(state(s.id));
+  },
+
   async getSession(sessionId) {
     const s = mine(sessions[sessionId] ?? fail("Session not found"));
     return wait(state(s.id));
@@ -326,8 +335,8 @@ export const mockApi: Api = {
   async undoLastAnswer(sessionId) {
     const s = mine(sessions[sessionId] ?? fail("Session not found"));
     if (s.status !== "in_progress") fail("This session is no longer active");
-    if (s.attempts.length) fail("Answers cannot be changed after troubleshooting has started");
     const last = s.answers.pop() ?? fail("There is nothing to undo");
+    s.attempts = [];
     s.currentNodeId = last.nodeId;
     s.diagnosisId = null;
     return wait(state(sessionId));
@@ -450,6 +459,7 @@ export const mockApi: Api = {
       fail("This ticket cannot be assigned to you");
     }
     if (patch.status === "assigned" && !patch.assignToMe && !t.assignee) fail("Assign the ticket first");
+    if (patch.status === "resolved" && t.status !== "resolved") t.resolvedAt = new Date().toISOString();
     if (patch.status) t!.status = patch.status;
     if (patch.priority) t!.priority = patch.priority;
     if (patch.assignToMe) { t!.assignee = who.fullName; t!.assigneeId = who.id; }

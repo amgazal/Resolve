@@ -132,7 +132,10 @@ describe.sequential("mock API contract", () => {
 
     // But history cannot be rewritten after the fact.
     await expect(mockApi.recordAttempt(session.id, first!.id, "fixed")).rejects.toThrow(/already recorded/i);
-    await expect(mockApi.undoLastAnswer(session.id)).rejects.toThrow(/after troubleshooting has started/i);
+    session = await mockApi.undoLastAnswer(session.id);
+    expect(session.attempts).toHaveLength(0);
+    expect(session.diagnosis).toBeNull();
+    expect(session.node).not.toBeNull();
   });
 
   it("marks a discarded session abandoned and refuses later answers", async () => {
@@ -264,5 +267,23 @@ describe.sequential("product completion", () => {
     const events = await mockApi.getAdminAudit(category.id);
     expect(events.map(e => e.action)).toContain("tree_published");
     expect(events.every(e => e.actor === "Sam Adeyemi")).toBe(true);
+  });
+});
+
+
+describe.sequential("requester metadata corrections", () => {
+  it("persists only in-progress owner metadata and leaves traversal intact", async () => {
+    await signIn("maya@northgate.test");
+    const category = (await mockApi.getCatalog()).categories[0]!;
+    const session = await mockApi.startSession({ categoryId: category.id, description: "Wrong", device: "Laptop", operatingSystem: "macOS" });
+    const details = { description: "Corrected", device: "Phone", operatingSystem: "iOS" };
+    const updated = await mockApi.updateSessionDetails(session.id, details);
+    expect(updated).toMatchObject(details);
+    expect(updated.node?.id).toBe(session.node?.id);
+    await signIn("jordan@northgate.test");
+    await expect(mockApi.updateSessionDetails(session.id, details)).rejects.toThrow();
+    await signIn("maya@northgate.test");
+    await mockApi.abandonSession(session.id);
+    await expect(mockApi.updateSessionDetails(session.id, details)).rejects.toThrow(/no longer active/);
   });
 });

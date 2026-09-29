@@ -4,6 +4,7 @@ import { AUTH_EXPIRED_EVENT } from "@/api/authEvents";
 import { confirmLeave } from "@/unsaved";
 import { api, usingLiveBackend } from "@/api";
 
+import { useImageDraft } from "@/components/ImageDraft";
 import { MyRequests } from "@/components/MyRequests";
 import { Trail } from "@/components/Trail";
 import { SignIn } from "@/components/SignIn";
@@ -67,6 +68,10 @@ export default function App() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [stepPhase, setStepPhase] = useState<"idle" | "trying">("idle");
   const [note, setNote] = useState("");
+  const images = useImageDraft();
+  const [sentTicketId, setSentTicketId] = useState<string | null>(null);
+  const [imageFailure, setImageFailure] = useState(false);
+  const imageClear = useRef(images.clear); imageClear.current = images.clear;
   const [reference, setReference] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
@@ -83,6 +88,7 @@ export default function App() {
   useEffect(() => {
     const expired = () => {
       authGeneration.current++;
+      imageClear.current(); setImageFailure(false); setSentTicketId(null);
       setProfile(null); setCatalog(null); setSession(null); setStage("landing");
       setSurface("support"); setRestoring(false); setRestoreError(false);
       setError("Your session has ended. Sign in again to continue.");
@@ -191,8 +197,9 @@ export default function App() {
 
   async function undo() {
     if (!session) return;
+    if (session.attempts.length && !window.confirm("Change your last answer? Troubleshooting results for this diagnosis will be cleared so IT receives an accurate report.")) return;
     const s = await run(() => api.undoLastAnswer(session.id));
-    if (s) { setSession(s); setStage(stageForSession(s)); }
+    if (s) { setSession(s); setStepPhase("idle"); setStage(stageForSession(s)); }
   }
 
   async function mark(outcome: "fixed" | "failed") {
@@ -207,24 +214,51 @@ export default function App() {
     else if (failedSoFar + 1 >= (s.diagnosis?.steps.length ?? 0)) setStage("escalate");
   }
 
+  async function saveDetails(details: { description: string; device: string; operatingSystem: string }) {
+    if (!session) return false;
+    const saved = await run(() => api.updateSessionDetails(session.id, details));
+    if (!saved) return false;
+    setSession(saved); setDescription(saved.description); setDevice(saved.device ?? details.device); setOs(saved.operatingSystem ?? details.operatingSystem);
+    return true;
+  }
+
+  async function retryImages() {
+    if (!sentTicketId || !images.images.length) return false;
+    const sent = await run(async () => { await api.sendTicketMessage(sentTicketId, "Supporting screenshots / photos for my request.", false, images.images); return true; });
+    if (sent) { images.clear(); setImageFailure(false); }
+    return Boolean(sent);
+  }
+
   async function send() {
-    if (!session) return;
-    const t = await run(() => api.escalate(session.id, note));
-    if (t) {
+    if (!session || images.busy) return;
+    const result = await run(async () => {
+      const ticket = await api.escalate(session.id, note);
+      // Ticket creation is authoritative and must survive any later image failure.
+      let failed = false;
+      if (images.images.length) {
+        try { await api.sendTicketMessage(ticket.id, "Supporting screenshots / photos for my request.", false, images.images); }
+        catch { failed = true; }
+      }
+      return { ticket, failed };
+    });
+    if (result) {
       storeActiveSession(null);
-      setSession((current) => current ? { ...current, status: "escalated" } : current);
-      setReference(t.reference);
-      setStage("sent");
+      setSession(current => current ? { ...current, status: "escalated" } : current);
+      setSentTicketId(result.ticket.id); setImageFailure(result.failed);
+      if (!result.failed) images.clear();
+      setReference(result.ticket.reference); setStage("sent");
     }
   }
 
   function clearFlow() {
     storeActiveSession(null);
+    images.clear(); setSentTicketId(null); setImageFailure(false);
     setStage("landing"); setDescription(""); setCategoryId(null); setSession(null);
     setNote(""); setReference(null); setStepPhase("idle");
   }
 
   async function restart() {
+    if (session?.status === "in_progress" && !window.confirm("Start over with a different category? Your current answers, troubleshooting results, notes, and selected images will be cleared.")) return;
     if (session?.status === "in_progress") {
       const abandoned = await run(async () => {
         await api.abandonSession(session.id);
@@ -268,16 +302,16 @@ export default function App() {
             {profile.role !== "unprovisioned" ? (
               <div className="switch" role="group" aria-label="Choose a view">
                 <button
-                  aria-pressed={surface === "support"}
+                  disabled={busy || images.busy} aria-pressed={surface === "support"}
                   className={surface === "support" ? "on" : ""}
                   onClick={() => { if (surface !== "support" && confirmLeave()) setSurface("support"); }}
                 >
                   Get help
                 </button>
-                <button aria-pressed={surface === "requests"} className={surface === "requests" ? "on" : ""}
+                <button disabled={busy || images.busy} aria-pressed={surface === "requests"} className={surface === "requests" ? "on" : ""}
                   onClick={() => { if (confirmLeave()) setSurface("requests"); }}>My requests</button>
                 {isStaff ? <button
-                  aria-pressed={surface === "desk"}
+                  disabled={busy || images.busy} aria-pressed={surface === "desk"}
                   className={surface === "desk" ? "on" : ""}
                   onClick={() => { if (surface !== "desk" && confirmLeave()) setSurface("desk"); }}
                 >
@@ -285,7 +319,7 @@ export default function App() {
                 </button> : null}
                 {isAdmin ? (
                   <button
-                    aria-pressed={surface === "editor"}
+                    disabled={busy || images.busy} aria-pressed={surface === "editor"}
                     className={surface === "editor" ? "on" : ""}
                     onClick={() => { if (surface !== "editor" && confirmLeave()) setSurface("editor"); }}
                   >
@@ -337,7 +371,7 @@ export default function App() {
         : catalogError ? <div className="empty" role="alert"><p>We couldn't load the categories.</p><button className="btn" onClick={() => setCatalogRetry((n) => n + 1)}>Retry</button></div>
         : surface === "desk" && isStaff ? (
           <ITDesk currentUserId={profile.id} flash={flash} onError={setError} />
-        ) : surface === "requests" ? <MyRequests /> : surface === "editor" && isAdmin ? (
+        ) : surface === "requests" ? <MyRequests initialSelected={sentTicketId} pendingImages={imageFailure && sentTicketId ? { ticketId: sentTicketId, draft: images, retry: retryImages } : undefined} /> : surface === "editor" && isAdmin ? (
           catalog
             ? <TreeEditor categories={catalog.categories} flash={flash} onError={setError} />
             : <div className="loading">Loading categories…</div>
@@ -345,7 +379,7 @@ export default function App() {
           <div className="loading">Getting things ready…</div>
         ) : stage === "landing" ? (
           <Landing
-            catalog={catalog}
+            catalog={catalog} images={images}
             firstName={profile.fullName.split(" ")[0] ?? ""}
             description={description} setDescription={setDescription}
             categoryId={categoryId} setCategoryId={setCategoryId}
@@ -355,9 +389,9 @@ export default function App() {
           />
         ) : stage === "resolved" && session ? (
           <Resolved session={session} onDone={restart} />
-        ) : stage === "sent" && reference ? (
+        ) : stage === "sent" && reference && session ? (
           <Sent
-            reference={reference}
+            reference={reference} session={session} imageFailure={imageFailure}
             onRequests={() => setSurface("requests")}
             canSeeQueue={isStaff}
             onView={() => setSurface("desk")}
@@ -376,7 +410,7 @@ export default function App() {
                 />
               ) : (
                 <Escalate
-                  session={session} note={note} setNote={setNote}
+                  session={session} note={note} setNote={setNote} catalog={catalog} images={images} onSaveDetails={saveDetails} onUndo={undo} onRestart={restart}
                   onSend={send} onBack={() => setStage("fix")} busy={busy} flash={flash}
                 />
               )}

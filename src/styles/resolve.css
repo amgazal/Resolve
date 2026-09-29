@@ -31,7 +31,7 @@ button, input, select, textarea { font: inherit; }
   --green-soft: #E3EDE7;
   --clay:       #96482B;
   --clay-soft:  #FBEDE8;
-  --ochre:      #8A6A1F;
+  --ochre:      #755719;
 
   --serif: "Newsreader", "Iowan Old Style", Georgia, "Times New Roman", serif;
   --sans:  "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -720,3 +720,56 @@ button, input, select, textarea { font: inherit; }
 .ticket-workflow .status-resolved { color: #52604f; background: #f0f2ed; }
 
 .image-placeholder { display: grid; place-items: center; min-height: 100px; padding: .5rem; color: #52604f; }
+
+/* Action priority is separate from technical severity. */
+.requests-layout { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr); align-items: start; gap: 24px; }
+.request-groups { display: grid; gap: 24px; min-width: 0; }
+.request-group { border: 1px solid var(--rule); border-radius: 10px; padding: 18px; background: #f7f8f4; }
+.request-group header { margin-bottom: 14px; }
+.request-group .hlabel { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink); }
+.group-count { padding: 2px 9px; border-radius: 4px; background: var(--green-soft); font: 500 .85rem var(--mono); }
+.group-reply { border-color: #cabb93; border-top: 4px solid #947029; background: #faf5e9; }
+.group-reply .request-status { color: #775316; font-weight: 600; }
+.group-resolved { background: #f0f2ed; }
+.request-group ul { display: grid; gap: 10px; }
+.request-card { display: grid; width: 100%; min-width: 0; text-align: left; gap: 5px; padding: 15px; border: 1px solid #cad4cb; border-radius: 7px; background: white; cursor: pointer; overflow-wrap: anywhere; }
+.request-card:hover { border-color: var(--green); }
+.request-card.selected { border-color: var(--green); box-shadow: inset 4px 0 var(--green); background: #f4f8f4; }
+.request-subject { font-weight: 500; }
+.request-open { color: var(--green-dark); font-size: .85rem; margin-top: 4px; }
+.request-status { font-size: .9rem; }
+.request-detail { min-width: 0; }
+.request-detail > .label { margin: 8px 0 18px; color: var(--green-dark); }
+.request-detail > .said { margin-bottom: 24px; }
+.reply-callout { padding: 16px; margin: 16px 0; border: 1px solid #cabb93; border-left: 4px solid #947029; border-radius: 6px; background: #faf5e9; color: #4e3c17; }
+.image-draft { margin: 20px 0; min-width: 0; }
+.image-draft .attachment-list { margin-top: 12px; }
+.review-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.review-tools + .hint { margin-bottom: 20px; }
+.issue-editor { background: white; padding: 22px; margin: 20px 0; border: 2px solid var(--green); border-radius: 8px; }
+.issue-editor .field { margin-top: 16px; }
+.issue-editor .context { margin: 18px 0; }
+.handoff { border-color: #b7c6b9; box-shadow: 0 2px 8px #19392a08; }
+.handoff-head { background: #e3ede7; }
+.security-hint { padding: 10px 14px; border-left: 3px solid var(--green); background: #e3ede7; color: #244b38; font-size: .9rem; margin-bottom: 18px !important; }
+.step.is-now { border: 2px solid var(--green); background: #fff; box-shadow: 0 2px 8px #19392a08; }
+.step.is-now .step-title { color: var(--green-dark); font-weight: 600; }
+.active-step-label { color: var(--green); margin: 6px 0 !important; }
+.step.is-later { opacity: 1; background: #f0f2ed; }
+.step.is-done { background: #e8eee7; }
+.cat.on { border-color: var(--green); background: #ddebe2; box-shadow: inset 0 0 0 1px var(--green); }
+.stat-needs_review { color: #713c20; background: #f8eadb; padding: 3px 6px; border-radius: 4px; font-weight: 600; }
+.stat-waiting { color: #58655d; }
+.panel-next-action { background: #e3ede7; padding: 12px 16px; border-left: 3px solid var(--green); }
+.notefield .hint { margin-top: 8px; }
+@media (max-width: 768px) {
+  .requests-layout { grid-template-columns: minmax(0, 1fr); }
+  .request-group { padding: 14px; }
+  .review-tools { flex-direction: column; align-items: stretch; }
+  .issue-editor { padding: 16px; }
+}
+
+/* Keep native version selectors within their card at enlarged text sizes. */
+.editor-side select { width: 100%; min-width: 0; max-width: 100%; }
+
+.request-detail > .col-title { scroll-margin-top: 100px; }

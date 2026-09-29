@@ -33,6 +33,7 @@ supabase/04_hardening.sql
 supabase/05_product_completion.sql
 supabase/migrations/20260929000100_conversation_ownership.sql
 supabase/migrations/20260929000200_ticket_images.sql
+supabase/migrations/20260930000100_requester_refinement.sql
 ```
 
 For a new database, choose either the SQL editor sequence above or the CLI migration below. They contain the same schema, policies, and functions; do not apply both to the same database.
@@ -185,3 +186,9 @@ The script reads `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (or legacy service-rol
 Test disposable requester, technician, admin, second-requester, other-organization and anonymous clients on the hosted project before enabling `VITE_TICKET_IMAGES_ENABLED=true` in the GitHub repository variables. Verify valid PNG/JPEG/WebP input, invalid bytes/MIME/size/count, read boundaries, pending-upload invisibility, atomic send/wait, terminal resolution, function logs, and scheduled cleanup. The checked-in integration suites deliberately refuse hosted URLs; reproduce representative checks with explicitly disposable hosted fixtures. Then rebuild/deploy and verify uploads directly at the canonical domain. Until these steps pass, leave the flag unset/false.
 
 For the current public demo deployment, `npm run test:production` runs the demo browser journeys directly on `https://resolve.amgazal.com/`. It intentionally fails if demo role controls are absent; do not treat it as a hosted-account test.
+
+## Requester refinement migration
+
+Apply missing `20260930000100_requester_refinement.sql` after reviewing migration history. It adds owner/org/in-progress-only metadata corrections, makes confirmed last-answer rewind clear obsolete attempts atomically, and adds public-only last activity to the requester projection. It does not change RLS grants on tables, category/tree/version traversal, Storage access, or existing diagnostic content. No seed was run for the wording changes; the built-in presentation guidance is bundled with the app.
+
+Initial screenshots are normalized locally and uploaded only after the normal escalation RPC returns a ticket. The existing ticket-image function and message RPC remain the only upload/linking path. A later image failure leaves the ticket intact; the tab retains files for retry through My requests. Reload discards staged files, but live tickets and successfully linked images persist. Keep the hosted upload gate disabled until the existing hosted verification and cleanup prerequisites above are satisfied.

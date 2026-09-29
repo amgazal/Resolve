@@ -138,6 +138,9 @@ export function TicketPanel({
         ) : (
           <div className="panel-body" tabIndex={0} role="region" aria-label="Ticket content">
           <div className="panel-main">
+            <div className="panel-next-action"><p className="hlabel">Next action</p><p>{ticket.status === "resolved" ? "Resolved · retained for reference." : ticket.status === "waiting" ? "Waiting on the requester. Resume work when you are ready to continue." : ticket.status === "needs_review" ? "Review the requester’s reply, then continue troubleshooting or resolve the request." : !ticket.assigneeId ? "Assign this request before taking ownership of the next step." : "Review the findings and attempted steps, then reply to the requester."}</p>
+              {ticket.messages.filter(m => m.senderKind === "requester").length ? <p className="hint">Latest requester reply · {new Date(ticket.messages.filter(m => m.senderKind === "requester").at(-1)!.createdAt).toLocaleString()}</p> : null}
+            </div>
             <section>
               <p className="hlabel">In their words</p>
               <p className="said">{ticket.description || "No additional description provided."}</p>

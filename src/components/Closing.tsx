@@ -1,5 +1,6 @@
 import type { SessionState } from "@/types";
 import { Icon } from "./Icon";
+import { handoffConfirmation } from "@/api/requesterPresentation";
 import { Trail } from "./Trail";
 
 export function Resolved({ session, onDone }: { session: SessionState; onDone: () => void }) {
@@ -23,8 +24,10 @@ export function Resolved({ session, onDone }: { session: SessionState; onDone: (
 }
 
 export function Sent({
-  reference, canSeeQueue, onView, onDone, onRequests,
+  reference, canSeeQueue, onView, onDone, onRequests, session, imageFailure,
 }: {
+  session: SessionState;
+  imageFailure?: boolean;
   onRequests: () => void;
   reference: string;
   canSeeQueue: boolean;
@@ -37,10 +40,9 @@ export function Sent({
         <span className="seal" aria-hidden="true"><Icon name="arrow" size={20} /></span>
         <h1 className="display display-sm">On its way.</h1>
         <p className="lede">
-          Your request is <strong className="ref">{reference}</strong>. A technician picks it up with
-          your full diagnostic history attached — so nobody will ask whether you've tried turning it
-          off and on again.
+          Your request is <strong className="ref">{reference}</strong>. {handoffConfirmation(session)}
         </p>
+        {imageFailure ? <p className="reply-callout" role="alert">Your request was sent, but the screenshots could not be attached. Open My requests to retry attaching them. Your selected images are kept in this tab until you retry, start over, or reload.</p> : null}
         <div className="row row-center">
           <button className="btn btn-primary" onClick={onRequests}>View my requests</button>
           {canSeeQueue ? (
@@ -48,7 +50,7 @@ export function Sent({
               See it in the IT desk<Icon name="arrow" size={17} />
             </button>
           ) : null}
-          <button className={canSeeQueue ? "btn btn-plain" : "btn btn-primary"} onClick={onDone}>
+          <button className="btn btn-plain" onClick={onDone}>
             Report something else
           </button>
         </div>

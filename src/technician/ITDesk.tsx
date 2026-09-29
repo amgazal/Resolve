@@ -67,6 +67,7 @@ export function ITDesk({
   ];
   const ordered = [...(filters.find(f => f.id === filter)?.rows ?? tickets)].sort((a, b) =>
     Number(a.status === "resolved") - Number(b.status === "resolved") ||
+    Number(b.status === "needs_review") - Number(a.status === "needs_review") ||
     (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3) ||
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 

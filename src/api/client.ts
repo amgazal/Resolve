@@ -131,6 +131,8 @@ export const supabaseApi: Api = {
       p_operating_system: operatingSystem,
     }),
 
+  updateSessionDetails: (sessionId, details) => rpc<SessionState>("update_session_details", { p_session_id: sessionId, p_description: details.description, p_device: details.device, p_operating_system: details.operatingSystem }),
+
   getSession: (sessionId) =>
     rpc<SessionState>("get_session_state", { p_session_id: sessionId }),
 

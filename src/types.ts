@@ -135,6 +135,7 @@ export interface RequesterTicket {
   status: TicketStatus;
   categoryLabel: string;
   createdAt: string;
+  lastActivityAt?: string;
 }
 export interface RequesterTicketDetail extends RequesterTicket {
   description: string;
@@ -244,6 +245,7 @@ export interface Api {
     device: string;
     operatingSystem: string;
   }): Promise<SessionState>;
+  updateSessionDetails(sessionId: string, details: { description: string; device: string; operatingSystem: string }): Promise<SessionState>;
   getSession(sessionId: string): Promise<SessionState>;
   abandonSession(sessionId: string): Promise<void>;
   answer(sessionId: string, optionId: string): Promise<SessionState>;
