@@ -24,13 +24,16 @@ jobs:
         run: npm ci
 
       - name: Start local Auth, API and database
-        run: npx supabase start -x studio,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor
+        run: npx supabase start -x studio,realtime,imgproxy,logflare,vector,supavisor
 
       - name: Lint database
         run: npx supabase db lint --level warning
 
       - name: Run pgTAP database tests
         run: npx supabase test db
+
+      - name: Serve authenticated image endpoint
+        run: npx supabase functions serve ticket-image > /tmp/resolve-image-function.log 2>&1 &
 
       - name: Run authenticated role-boundary tests
         run: npm run test:integration

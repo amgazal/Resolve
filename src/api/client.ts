@@ -156,8 +156,31 @@ export const supabaseApi: Api = {
 
   getMyTickets: () => rpc<RequesterTicket[]>("get_my_tickets"),
   getMyTicket: (id) => rpc<RequesterTicketDetail>("get_my_ticket", { p_ticket_id: id }),
-  async sendTicketMessage(ticketId, body, waitForReply = false) {
+  async sendTicketMessage(ticketId, body, waitForReply = false, images = []) {
+    if (images.length) {
+      if (images.length > 3) throw new Error("Attach at most three images.");
+      const ids: string[] = [];
+      for (const image of images) {
+        const { data, error } = await db().functions.invoke(`ticket-image?ticket=${encodeURIComponent(ticketId)}&filename=${encodeURIComponent(image.file.name)}`, { body: image.file, headers: { "Content-Type": "image/png" } });
+        if (error || !data?.id) throw new Error("Image upload failed. Your draft is saved; please try again.");
+        ids.push(data.id);
+      }
+      await rpc("send_ticket_message_with_images", { p_ticket_id: ticketId, p_body: body, p_wait_for_reply: waitForReply, p_attachment_ids: ids });
+      return;
+    }
     await rpc("send_ticket_message", { p_ticket_id: ticketId, p_body: body, p_wait_for_reply: waitForReply });
+  },
+
+  async getTicketAttachments(ticketId) {
+    const { data, error } = await db().from("ticket_attachments").select("id,message_id,filename,size_bytes,width,height,object_path").eq("ticket_id", ticketId).order("created_at");
+    if (error) readable(error);
+    return data.map(a => ({ id: a.id, messageId: a.message_id, filename: a.filename, size: a.size_bytes, width: a.width, height: a.height, path: a.object_path }));
+  },
+  async getAttachmentImage(attachment) {
+    if (!attachment.path) throw new Error("Image unavailable");
+    const { data, error } = await db().storage.from("ticket-attachments").download(attachment.path);
+    if (error) throw new Error("Image unavailable. Refresh and try again.");
+    return data;
   },
 
   /* ------------------------------- tickets ------------------------------ */

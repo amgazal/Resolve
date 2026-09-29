@@ -1,3 +1,5 @@
+import type { TicketAttachment } from "@/types";
+const demoImages = new Map<string, { attachment: TicketAttachment; ticketId: string; blob: Blob }>();
 /**
  * In-memory adapter.
  *
@@ -386,7 +388,7 @@ export const mockApi: Api = {
     const t = tickets.find(t => t.id === id && t.requesterId === me().id) ?? fail("Request not found");
     return wait({ ...requesterRow(t), description: sessions[t.sessionId]?.description ?? "", messages: t.messages.map(m => ({ ...m })) });
   },
-  async sendTicketMessage(ticketId, body, waitForReply = false) {
+  async sendTicketMessage(ticketId, body, waitForReply = false, images = []) {
     const user = me();
     const t = tickets.find(t => t.id === ticketId) ?? fail("Request not found");
     const owner = t.requesterId === user.id;
@@ -395,10 +397,30 @@ export const mockApi: Api = {
     const clean = cleanText(body, 4000);
     if (!clean) fail("Write a message before sending it");
     if (owner && waitForReply) fail("Only IT can request a reply");
-    t.messages.push({ id: uid("msg"), author: user.fullName, senderKind: owner ? "requester" : "staff", body: clean, createdAt: new Date().toISOString() });
+    if (images.length > 3) fail("Attach at most three images");
+    const messageId = uid("msg");
+    for (const image of images) {
+      const id = uid("image");
+      demoImages.set(id, { ticketId, blob: image.file, attachment: { id, messageId, filename: image.file.name, size: image.file.size, width: image.width, height: image.height } });
+    }
+    t.messages.push({ id: messageId, author: user.fullName, senderKind: owner ? "requester" : "staff", body: clean, createdAt: new Date().toISOString() });
     if (owner && t.status === "waiting") t.status = "needs_review";
-    else if (!owner && waitForReply) t.status = "waiting";
+    else if (!owner && waitForReply) {
+      t.status = "waiting";
+      if (!t.assigneeId) { t.assigneeId = user.id; t.assignee = user.fullName; }
+    }
     return wait(undefined);
+  },
+
+  async getTicketAttachments(ticketId) {
+    const user = me(); const ticket = tickets.find(t => t.id === ticketId) ?? fail("Request not found");
+    if (ticket.requesterId !== user.id) staff();
+    return [...demoImages.values()].filter(i => i.ticketId === ticketId).map(i => i.attachment);
+  },
+  async getAttachmentImage(attachment) {
+    const image = demoImages.get(attachment.id) ?? fail("Image unavailable");
+    await mockApi.getTicketAttachments(image.ticketId);
+    return image.blob;
   },
 
   async getTickets() { staff(); return wait(tickets.map(rowOf)); },

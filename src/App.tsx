@@ -94,10 +94,13 @@ export default function App() {
   /* ------------------------------- session ------------------------------ */
 
   useEffect(() => {
+    let active = true;
+    const generation = authGeneration.current;
     api.getProfile()
-      .then(setProfile)
-      .catch(() => setProfile(null))
-      .finally(() => setChecking(false));
+      .then(value => { if (active && generation === authGeneration.current) setProfile(value); })
+      .catch(() => { if (active && generation === authGeneration.current) setProfile(null); })
+      .finally(() => { if (active) setChecking(false); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {

@@ -221,6 +221,8 @@ describe.sequential("product completion", () => {
     await mockApi.updateTicket(ticket.id, { assignToMe: true, status: "assigned" });
     await expect(mockApi.updateTicket(ticket.id, { status: "waiting" })).rejects.toThrow(/conversation/);
     await mockApi.addNote(ticket.id, "Private technician note");
+    await mockApi.sendTicketMessage(ticket.id, "Ordinary message");
+    expect((await mockApi.getTicket(ticket.id)).status).toBe("assigned");
     await mockApi.sendTicketMessage(ticket.id, " Please check again ", true);
     const saved = await mockApi.saveRoute(ticket.id);
     expect((await mockApi.saveRoute(ticket.id)).id).toBe(saved.id);
@@ -231,7 +233,7 @@ describe.sequential("product completion", () => {
     await signIn("maya@northgate.test");
     const own = await mockApi.getMyTicket(ticket.id);
     expect(own.status).toBe("waiting");
-    expect(own.messages[0]?.body).toBe("Please check again");
+    expect(own.messages[1]?.body).toBe("Please check again");
     expect(own).not.toHaveProperty("notes");
     expect(JSON.stringify(own)).not.toContain("Private technician");
     await expect(mockApi.sendTicketMessage(ticket.id, " \t\n ")).rejects.toThrow(/message/);
@@ -240,6 +242,8 @@ describe.sequential("product completion", () => {
     const updated = await mockApi.getTicket(ticket.id);
     expect(updated.status).toBe("needs_review");
     expect(updated.assigneeId).toBe("u_jordan");
+    await mockApi.sendTicketMessage(ticket.id, "Reviewing your reply");
+    expect((await mockApi.getTicket(ticket.id)).status).toBe("needs_review");
     await mockApi.updateTicket(ticket.id, { status: "resolved" });
     await expect(mockApi.sendTicketMessage(ticket.id, "Reopen")).rejects.toThrow(/resolved/i);
   });

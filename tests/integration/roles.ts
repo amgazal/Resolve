@@ -1,5 +1,6 @@
 /** Real password-authenticated requests. Service access is fixture setup/cleanup only. */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -80,6 +81,11 @@ try {
   denied(await a.from('tickets').update({ status: 'resolved' }).eq('id', ticket.id));
   const queue = ok(await tech.from('ticket_queue').select('*').eq('id', ticket.id)); assert.equal(queue.length, 1); checks++;
   const context = await rpc(tech, 'get_session_state', { p_session_id: session.id }); assert.equal(context.facts.length, 1); checks++;
+  // Unassigned Send & wait claims ownership; ordinary Send preserves it.
+  await rpc(tech, 'send_ticket_message', { p_ticket_id: ticket.id, p_body: 'Waiting on confirmation', p_wait_for_reply: true });
+  const claimed = ok(await tech.from('tickets').select('status,assignee_id').eq('id', ticket.id))[0];
+  assert.equal(claimed.status, 'waiting'); assert.equal(claimed.assignee_id, userIds[2]); checks++;
+  ok(await service.from('ticket_messages').delete().eq('ticket_id', ticket.id));
   await rpc(tech, 'update_ticket', { p_ticket_id: ticket.id, p_status: 'assigned', p_assign_to_me: true });
   await rpc(tech, 'add_ticket_note', { p_ticket_id: ticket.id, p_body: ' Internal only ' });
   assert.equal(ok(await tech.from('ticket_notes').select('*').eq('ticket_id', ticket.id))[0].body, 'Internal only'); checks++;
@@ -128,7 +134,42 @@ try {
   assert.equal((await rpc(a, 'get_path_library')).length, 0); checks++;
   assert.equal((await rpc(other, 'get_path_library')).length, 0); checks++;
 
+  // Image ingestion checks actual bytes at the Edge boundary. Storage writes cannot bypass it.
+  const png = readFileSync('tests/fixtures/support.png');
+  async function upload(client: SupabaseClient, bytes = png, type = 'image/png', filename = 'support.png') {
+    return client.functions.invoke(`ticket-image?ticket=${ticket.id}&filename=${encodeURIComponent(filename)}`, { body: new Blob([new Uint8Array(bytes)], { type }), headers: { 'Content-Type': type } });
+  }
+  const image = ok(await upload(a)); assert.ok(image.id); checks++;
+  const pending = ok(await service.from('ticket_attachments').select('*').eq('id', image.id))[0];
+  for (const client of [a, b, tech, other, anonymous]) denied(await client.storage.from('ticket-attachments').download(pending.object_path));
+  denied(await a.storage.from('ticket-attachments').upload(`${orgs[0]}/${ticket.id}/${randomUUID()}.png`, png, { contentType: 'image/png' }));
+  const withImages = (body: string, ids = [image.id]) => ({ p_ticket_id: ticket.id, p_body: body, p_attachment_ids: ids, p_wait_for_reply: false });
+  denied(await a.rpc('send_ticket_message_with_images', withImages('')));
+  assert.equal(ok(await a.from('ticket_attachments').select('*').eq('id', image.id)).length, 0); checks++;
+  denied(await b.rpc('send_ticket_message_with_images', withImages('Not mine')));
+  denied(await other.rpc('send_ticket_message_with_images', withImages('Other org')));
+  denied(await a.rpc('send_ticket_message_with_images', withImages('Too many', [image.id,image.id,image.id,image.id])));
+  denied(await a.rpc('send_ticket_message_with_images', withImages('Forged', [randomUUID()])));
+  await rpc(a, 'send_ticket_message_with_images', withImages('See the screenshot'));
+  for (const client of [a,tech,admin]) { const blob = ok(await client.storage.from('ticket-attachments').download(pending.object_path)); assert.equal(blob.size, png.length); checks++; }
+  for (const client of [b,other,anonymous]) {
+    denied(await client.storage.from('ticket-attachments').download(pending.object_path));
+    denied(await client.from('ticket_attachments').select('*').eq('id', image.id));
+  }
+  denied(await a.rpc('send_ticket_message_with_images', withImages('Cannot reuse')));
+  for (const client of [b,other,anonymous]) { assert.ok((await upload(client)).error); checks++; }
+  assert.ok((await upload(a, Buffer.from('<svg onload="alert(1)"/>'), 'image/svg+xml', 'bad.svg')).error); checks++;
+  assert.ok((await upload(a, png, 'text/html')).error); checks++;
+  assert.ok((await upload(a, Buffer.from('<html>not PNG</html>'))).error); checks++;
+  assert.ok((await upload(a, Buffer.alloc(5242881))).error); checks++;
+  const staffImage = ok(await upload(tech, png, 'image/png', '<script>alert(1)</script>.png'));
+  await rpc(tech, 'send_ticket_message_with_images', withImages('Staff image', [staffImage.id]));
+  const visible = ok(await a.from('ticket_attachments').select('*').eq('ticket_id', ticket.id));
+  assert.equal(visible.length, 2); checks++;
+  assert.ok(visible.some((v: any) => v.filename.includes('<script>'))); checks++;
+  ok(await service.storage.from('ticket-attachments').remove(visible.map((v: any) => v.object_path)));
   await rpc(tech, 'update_ticket', { p_ticket_id: ticket.id, p_status: 'resolved' });
+  denied(await a.rpc('reserve_ticket_image', { p_ticket_id: ticket.id, p_filename: 'late.png', p_size: 90, p_width: 20, p_height: 20 }));
   denied(await a.rpc('send_ticket_message', { p_ticket_id: ticket.id, p_body: 'Reopen' }));
   for (const status of ['waiting', 'new', 'assigned', 'needs_review']) denied(await tech.rpc('update_ticket', { p_ticket_id: ticket.id, p_status: status }));
   const draftId = await rpc(admin, 'open_tree_draft', { p_category_id: one.category }); trees.push(draftId);

@@ -25,19 +25,21 @@ export function TicketPanel({
 
   const actionLock = useRef(false);
   const mounted = useRef(true);
+  const loadGeneration = useRef(0);
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setLoadError(null);
     await api.getTicket(ticketId)
-      .then((value) => { if (mounted.current) setTicket(value); })
+      .then((value) => { if (mounted.current && generation === loadGeneration.current) setTicket(value); })
       .catch((e: Error) => {
-        if (!mounted.current) return;
+        if (!mounted.current || generation !== loadGeneration.current) return;
         setTicket(null);
         setLoadError(e.message);
         onError(e.message);
       });
   }, [ticketId, onError]);
 
-  useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false; }; }, [load]);
+  useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false; loadGeneration.current++; }; }, [load]);
 
   useEffect(() => {
     previousFocus.current = document.activeElement instanceof HTMLElement
@@ -119,6 +121,7 @@ export function TicketPanel({
             <h2 id="ticket-panel-title" className="col-title panel-title">
               {ticket?.subject ?? (loadError ? "This ticket could not be opened." : "Opening ticket…")}
             </h2>
+            {ticket ? <p className="ticket-workflow" role="status"><span className={`badge status-${ticket.status}`}>{ticket.status.replaceAll("_", " ")}</span> · {ticket.assignee ?? "Unassigned"}{ticket.status === "waiting" ? " · IT is waiting on the requester" : ticket.status === "needs_review" ? " · Requester replied; IT needs to review" : ""}</p> : null}
           </div>
           <button ref={closeRef} className="btn btn-plain btn-sm" onClick={onClose} aria-label="Close ticket detail">
             <Icon name="close" size={15} />
@@ -160,9 +163,9 @@ export function TicketPanel({
               </ul>
             </section>
 
-            <Conversation messages={ticket.messages} resolved={ticket.status === "resolved"} staff disabled={busy} requester={ticket.requester}
-              onSend={(body, wait) => act(() => api.sendTicketMessage(ticket.id, body, wait), wait ? "Message sent · waiting for reply" : "Message sent")} />
-            <button className="btn" disabled={busy} onClick={() => void load()}>Refresh conversation</button>
+            <Conversation ticketId={ticket.id} messages={ticket.messages} resolved={ticket.status === "resolved"} staff disabled={busy} requester={ticket.requester} status={ticket.status} unassigned={!ticket.assigneeId}
+              onSend={(body, wait, images) => act(() => api.sendTicketMessage(ticket.id, body, wait, images), wait ? "Sent · waiting for requester." : "Message sent.")} />
+            <button className="btn" disabled={busy} onClick={() => void Promise.all([load(), onChanged()])}>Refresh conversation</button>
 
             <section>
               <p className="hlabel">Internal notes · IT only</p>

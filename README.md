@@ -2,6 +2,8 @@
 
 Resolve turns vague IT problems into guided troubleshooting and structured support tickets. It includes a requester flow, a technician desk, and an admin editor for diagnostic questions.
 
+[Open Resolve](https://resolve.amgazal.com/) — canonical HTTPS deployment. The public deployment currently uses clearly labelled demo data; hosted Supabase has not been connected or verified.
+
 ## What it does
 
 A requester describes the problem, selects a category, and answers one question at a time before trying suggested fixes. The selected category and answers determine the diagnostic path; the written description stays with the report as context. If the issue needs a technician, the requester reviews a handoff containing their answers, device details, and attempted fixes before sending it.
@@ -11,7 +13,7 @@ A requester describes the problem, selects a category, and answers one question 
 - Guided troubleshooting for network, login, software, hardware, printing, and general issues.
 - A diagnostic trail shared between the requester flow and ticket detail view.
 - My requests with an asynchronous public conversation, separate from internal IT notes. Sending a reply and waiting is atomic; a requester reply returns waiting work to needs review.
-- A technician queue with personal/unassigned/waiting filters and a Path Library of reusable question/answer paths and troubleshooting attempts.
+- A technician queue with personal/unassigned/waiting/needs-review filters and a Path Library of reusable question/answer paths and troubleshooting attempts.
 - An admin editor with local draft preview, backend validation, read-only version history, and an organization-scoped audit trail.
 - A demo mode that runs without a database, plus a Supabase adapter for persistent accounts and support history.
 
@@ -55,6 +57,7 @@ npm run check
 npm audit
 npx playwright install chromium
 npm run test:browser
+npm run test:paths
 ```
 
 `npm run check` runs TypeScript checking, Vitest, and a production build. The small Playwright suite checks demo journeys, modal keyboard behavior, unsaved edits, axe findings, and overflow at 320–1440px using a `/Resolve/` base path. The [database tests](./supabase/tests/database/schema_security_test.sql) cover policy structure, view configuration, cross-tree and cross-organization constraints, and resolution timestamps. See [DEPLOYMENT.md](./DEPLOYMENT.md) for local database checks and GitHub Pages setup, and [FINAL_REVIEW.md](./FINAL_REVIEW.md) for manual verification steps.
@@ -62,9 +65,10 @@ npm run test:browser
 With Docker running, the pinned Supabase CLI provides local backend checks:
 
 ```bash
-npx supabase start -x studio,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor
+npx supabase start -x studio,realtime,imgproxy,logflare,vector,supavisor
 npx supabase db lint --level warning
 npx supabase test db
+npx supabase functions serve ticket-image # run in a separate terminal
 npm run test:integration
 npm run test:browser:live
 ```
@@ -81,4 +85,12 @@ Pull requests run application, browser, database, and authenticated integration 
 - Conversations and the queue refresh after local actions or an explicit refresh; there is no realtime subscription or notification delivery. Resolved tickets are terminal; reopening is not supported.
 - Browser coverage is a small Chromium smoke suite, not exhaustive cross-browser or accessibility certification.
 
-The product-completion changes require `20260925000100_product_completion.sql` (or its SQL editor companion). Verification of this revision is **incomplete**: final browser and authenticated reruns were denied. See [review results](./FINAL_REVIEW.md).
+## Conversation and support images
+
+**Send message** appends a public reply and preserves the current status, including Waiting and Needs review. **Send & wait for reply** appends the reply and changes the status to Waiting in the same transaction; an unassigned ticket is assigned to the acting technician. The composer explains that assignment. While Waiting, only ordinary Send is shown; Resume work is a separate action. A requester reply returns Waiting to Needs review and preserves assignment.
+
+Images attach to an existing request in My requests or the technician's public conversation. Text is required for context; image-only messages are deliberately not supported. Accept JPEG, PNG, and WebP, at most **3 per message / 5 MiB each**. Images are decoded with orientation, resized to a maximum 4096-pixel edge, and re-encoded as PNG to preserve screenshot detail and remove EXIF/GPS metadata. The normalized result must also fit 5 MiB; large photographs may need a smaller source. No location information is extracted or stored.
+
+A byte-validating authenticated Edge Function writes only bounded PNGs without metadata chunks into private Supabase Storage. Metadata and message linking are explicit tables/RPCs; unpublished uploads cannot be viewed. Downloads require current requester/staff authorization. Object URLs are local, revoked on unmount, and not public Storage links. Abandoned reservations require the documented daily cleanup command.
+
+Demo attachments live only in memory and reset on reload. Hosted images are **disabled by default** (`VITE_TICKET_IMAGES_ENABLED=false`); enable only after both new migrations, the function, private bucket/policies, cleanup, and hosted tests are verified. See [deployment steps](./DEPLOYMENT.md) and [recorded verification](./FINAL_REVIEW.md).

@@ -15,7 +15,9 @@
     "test:browser": "playwright test",
     "build:demo": "VITE_SUPABASE_URL= VITE_SUPABASE_PUBLISHABLE_KEY= VITE_SUPABASE_ANON_KEY= VITE_BASE_PATH=/Resolve/ npm run build",
     "test:integration": "node --import tsx tests/integration/roles.ts",
-    "test:browser:live": "playwright test -c playwright.live.config.ts"
+    "test:browser:live": "playwright test -c playwright.live.config.ts",
+    "test:paths": "playwright test -c playwright.paths.config.ts",
+    "cleanup:images": "tsx scripts/cleanup-ticket-images.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

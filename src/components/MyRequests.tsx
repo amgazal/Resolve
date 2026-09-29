@@ -36,9 +36,9 @@ export function MyRequests() {
     </div><div className="cardlet">
       {detail ? <><h2 className="col-title">{detail.reference}</h2><p className="label">{detail.status.replaceAll("_", " ")}</p>
         <p className="said">{detail.description || "No additional description provided."}</p>
-        <Conversation key={detail.id} disabled={loading} messages={detail.messages} resolved={detail.status === "resolved"} onSend={async (body) => {
+        <Conversation ticketId={detail.id} key={detail.id} disabled={loading} messages={detail.messages} resolved={detail.status === "resolved"} onSend={async (body, _wait, images) => {
           setSending(true);
-          try { await api.sendTicketMessage(detail.id, body); await refresh(); return true; }
+          try { await api.sendTicketMessage(detail.id, body, false, images); await refresh(); return true; }
           catch (e) { setError((e as Error).message); return false; }
           finally { setSending(false); }
         }} />

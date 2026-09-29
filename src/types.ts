@@ -116,6 +116,9 @@ export interface TicketNote {
   createdAt: string;
 }
 
+export interface TicketAttachment {
+  id: string; messageId: string; filename: string; size: number; width: number; height: number; path?: string;
+}
 export interface TicketMessage {
   id: string;
   author: string;
@@ -250,7 +253,9 @@ export interface Api {
 
   getMyTickets(): Promise<RequesterTicket[]>;
   getMyTicket(id: string): Promise<RequesterTicketDetail>;
-  sendTicketMessage(ticketId: string, body: string, waitForReply?: boolean): Promise<void>;
+  sendTicketMessage(ticketId: string, body: string, waitForReply?: boolean, images?: import("./api/images").SupportImage[]): Promise<void>;
+  getTicketAttachments(ticketId: string): Promise<TicketAttachment[]>;
+  getAttachmentImage(attachment: TicketAttachment): Promise<Blob>;
 
   getTickets(): Promise<TicketRow[]>;
   getTicket(id: string): Promise<TicketDetail>;

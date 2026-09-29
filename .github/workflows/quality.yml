@@ -31,3 +31,6 @@ jobs:
 
       - name: Demo browser smoke tests
         run: npm run test:browser
+
+      - name: Custom-domain and legacy asset paths
+        run: npm run test:paths

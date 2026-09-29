@@ -1,5 +1,7 @@
 # Deploying Resolve
 
+Canonical public URL: **https://resolve.amgazal.com/**. HTTPS is enforced in GitHub Pages.
+
 Resolve has two deployment pieces:
 
 - **Frontend:** Vite/React static build on GitHub Pages.
@@ -29,6 +31,8 @@ supabase/02_policies.sql
 supabase/03_functions.sql
 supabase/04_hardening.sql
 supabase/05_product_completion.sql
+supabase/migrations/20260929000100_conversation_ownership.sql
+supabase/migrations/20260929000200_ticket_images.sql
 ```
 
 For a new database, choose either the SQL editor sequence above or the CLI migration below. They contain the same schema, policies, and functions; do not apply both to the same database.
@@ -97,9 +101,10 @@ Restart `npm run dev`, sign in with one of the Auth accounts, and verify a compl
 With Docker running and npm dependencies installed:
 
 ```bash
-npx supabase start -x studio,realtime,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor
+npx supabase start -x studio,realtime,imgproxy,logflare,vector,supavisor
 npx supabase db lint --level warning
 npx supabase test db
+npx supabase functions serve ticket-image # run in a separate terminal
 npm run test:integration
 npx playwright install chromium
 npm run test:browser:live
@@ -130,17 +135,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY
 
 They are injected into the Vite build. If you leave them unset, the deployed project remains a demo using the in-memory adapter.
 
-The included Pages workflow automatically chooses the correct Vite base path for both:
+The Pages workflow uses Vite's default `base: "./"`, and `public/CNAME` names `resolve.amgazal.com`. Do not derive a `/Resolve/` base from the repository name for this custom domain. The same relative build is tested at `/` and `/Resolve/` by `npm run test:paths`; GitHub may redirect the legacy URL to the canonical domain.
 
-```text
-https://USERNAME.github.io/REPOSITORY/
-```
-
-and a root user site such as:
-
-```text
-https://USERNAME.github.io/
-```
+The old deployed HTML requested `/Resolve/assets/index-DYAfhbmD.js` (404, HTML MIME). `/assets/index-DYAfhbmD.js` was available (200, JavaScript MIME). Relative `./assets/…` links fix that mismatch without hostname detection.
 
 Every push to `main` runs the TypeScript check, Vitest suite, production build, and Pages deployment. Watch **Actions** for the result.
 
@@ -162,3 +159,27 @@ sign in
 ```
 
 Also run Supabase's Security Advisor after the schema is deployed and inspect any warnings before sharing the live project widely.
+
+## Support image deployment (currently not verified on a hosted project)
+
+The public Pages build currently has no Supabase repository variables and runs demo mode. No hosted project was linked and no management token was available during this pass. Do not infer hosted readiness from local tests.
+
+For an existing hosted project, inspect its migration history and schema first. Apply only missing forward migrations; never reset or seed production. The new changes are `20260929000100_conversation_ownership.sql` and `20260929000200_ticket_images.sql`.
+
+After reviewing the hosted dry run and applying only the required migrations:
+
+```bash
+npx supabase functions deploy ticket-image --project-ref YOUR_PROJECT_REF
+```
+
+Keep JWT verification enabled. The function additionally authenticates with `auth.getUser()`, reserves an image through a caller-authorized RPC, checks PNG signature/chunks/CRCs/dimensions/size, and uploads with its server-only key. Browsers have no Storage upload/update/delete policy. The private `ticket-attachments` bucket accepts only normalized PNG up to 5 MiB; original JPEG/WebP inputs are re-encoded in the browser. Only committed public-message images can be read, by the owner or same-organization staff. No internal-note attachments exist.
+
+Message text is required. Uploads precede the atomic RPC linking up to three images and performing the workflow transition. Failed uploads/message creation leave **invisible pending reservations**, capped at 12 per uploader, rather than exposing partial messages. Run this on a trusted machine/scheduler daily with server credentials from a secret store:
+
+```bash
+npm run cleanup:images
+```
+
+The script reads `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (or legacy service-role key). It deletes only unpublished reservations older than 24 hours, locking against finalization, then removes their Storage objects. A Storage removal failure prints the object path and exits nonzero: retain that log and retry removal with trusted tooling. Do not lose failed-cleanup logs. There is no browser delete or message-edit feature. Resolved tickets reject both reservations and messages.
+
+Test disposable requester, technician, admin, second-requester, other-organization and anonymous clients on the hosted project before enabling `VITE_TICKET_IMAGES_ENABLED=true` in the GitHub repository variables. Verify valid PNG/JPEG/WebP input, invalid bytes/MIME/size/count, read boundaries, pending-upload invisibility, atomic send/wait, terminal resolution, function logs, and scheduled cleanup. The checked-in integration suites deliberately refuse hosted URLs; reproduce representative checks with explicitly disposable hosted fixtures. Then rebuild/deploy and verify uploads directly at the canonical domain. Until these steps pass, leave the flag unset/false.

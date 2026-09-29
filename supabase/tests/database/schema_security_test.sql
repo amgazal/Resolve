@@ -295,5 +295,13 @@ select ok(not has_function_privilege('anon', 'send_ticket_message(uuid,text,bool
 select ok(not has_function_privilege('anon', 'get_my_ticket(uuid)', 'EXECUTE'), 'anonymous cannot read request projection');
 select ok(not has_function_privilege('anon', 'validate_tree(uuid)', 'EXECUTE'), 'anonymous cannot validate trees');
 select ok(position('insert into' in lower(pg_get_functiondef('handle_new_auth_user()'::regprocedure))) = 0, 'signup does not create arbitrary membership');
+select ok((select relrowsecurity from pg_class where oid = 'public.ticket_attachments'::regclass), 'attachment metadata has RLS');
+select ok(not has_table_privilege('authenticated', 'public.ticket_attachments', 'INSERT'), 'clients cannot insert attachment metadata');
+select ok(not has_table_privilege('authenticated', 'public.ticket_attachments', 'UPDATE'), 'clients cannot reassign attachment metadata');
+select ok(not has_function_privilege('anon', 'public.reserve_ticket_image(uuid,text,integer,integer,integer)', 'EXECUTE'), 'anonymous cannot reserve images');
+select ok(not has_function_privilege('authenticated', 'private.send_public_message(uuid,text,boolean)', 'EXECUTE'), 'private send helper is not directly executable');
+select ok((select not public from storage.buckets where id = 'ticket-attachments'), 'image bucket is private');
+select ok((select file_size_limit = 5242880 and allowed_mime_types = array['image/png'] from storage.buckets where id = 'ticket-attachments'), 'bucket enforces normalized type and size');
+
 select * from finish();
 rollback;

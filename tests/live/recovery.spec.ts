@@ -139,6 +139,14 @@ test('live public reply moves waiting to needs review without exposing internal 
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByText('No additional description provided.')).toBeVisible();
     await dialog.getByRole('button', { name: 'Assign to me', exact: true }).click();
+    await dialog.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
+    await expect(dialog.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
+    await dialog.getByLabel('Message', { exact: true }).fill('Staff screenshot');
+    await dialog.getByRole('button', { name: 'Send message', exact: true }).click();
+    await expect(dialog.getByLabel('Message', { exact: true })).toHaveValue('');
+    await dialog.locator('.support-image').first().scrollIntoViewIfNeeded();
+    await expect(dialog.getByRole('button', { name: 'View support.png' })).toBeVisible();
+    await expect(dialog.locator('.ticket-workflow')).toContainText('assigned');
     await dialog.getByLabel('Add an internal note').fill('Private live inventory');
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(dialog.getByLabel('Add an internal note')).toHaveValue('');
@@ -157,16 +165,47 @@ test('live public reply moves waiting to needs review without exposing internal 
     await page.getByRole('button', { name: new RegExp(ticket.reference) }).click();
     await expect(page.getByText('Please check the cable.', { exact: true })).toBeVisible();
     await expect(page.getByText('Private live inventory')).toHaveCount(0);
+    await page.locator('.support-image').first().scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'View support.png' })).toBeVisible();
+    await page.getByRole('button', { name: 'View support.png' }).click();
+    await expect(page.getByRole('dialog', { name: 'support.png' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    const jpeg = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 24; c.height = 24; c.getContext('2d')!.fillRect(0,0,24,24); return c.toDataURL('image/jpeg').split(',')[1]!; });
+    await page.getByLabel('Attach image').setInputFiles({ name: 'device.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });
+    await expect(page.getByRole('button', { name: 'Remove device.png' })).toBeVisible();
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('It is connected.');
     await page.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('');
     await expect(page.locator('.requests .label').filter({ hasText: 'needs review' })).toBeVisible();
     const row = ok(await requester.from('tickets').select('status,assignee_id').eq('id', ticket.id))[0];
     expect(row.status).toBe('needs_review'); expect(row.assignee_id).toBe(user);
+    await page.locator('.support-image').last().scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'View device.png' })).toBeVisible();
   } finally {
     await requester.auth.signOut();
+    const attachments = ok(await db.from('ticket_attachments').select('object_path').eq('uploader_id', requesterId));
+    const staffAttachments = ok(await db.from('ticket_attachments').select('object_path').eq('uploader_id', user));
+    const paths = [...attachments, ...staffAttachments].map((a: any) => a.object_path);
+    if (paths.length) ok(await db.storage.from('ticket-attachments').remove(paths));
     ok(await db.from('tickets').delete().eq('requester_id', requesterId));
     ok(await db.from('diagnostic_sessions').delete().eq('user_id', requesterId));
     ok(await db.auth.admin.deleteUser(requesterId));
   }
+});
+
+test('a delayed profile response cannot restore access after an auth-ended event', async ({ page }) => {
+  let release!: () => void;
+  let arrived!: () => void;
+  const pending = new Promise<void>(resolve => { arrived = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/rest/v1/users?*', async route => {
+    const response = await route.fetch(); arrived(); await gate;
+    await route.fulfill({ response });
+  }, { times: 1 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await pending;
+  await page.evaluate(() => window.dispatchEvent(new Event('resolve:auth-expired')));
+  release();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'IT desk', exact: true })).toHaveCount(0);
 });

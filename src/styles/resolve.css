@@ -688,3 +688,35 @@ button, input, select, textarea { font: inherit; }
 
 .rsv .requests .desk-body { grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); }
 @media (max-width: 900px) { .rsv .requests .desk-body { grid-template-columns: 1fr; } }
+
+/* Support threads keep public replies distinct from private desk notes. */
+.ticket-workflow { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .85rem; margin-top: .75rem; }
+.ticket-workflow .badge { text-transform: capitalize; }
+.conversation-thread { display: grid; gap: .75rem; }
+.conversation-thread .message { border: 1px solid var(--line, #d8ddd6); border-radius: 8px; padding: 1rem; overflow-wrap: anywhere; }
+.conversation-thread .message-staff { background: #f0f4ef; border-left: 3px solid #496951; }
+.conversation-thread .message-requester { background: #fff; }
+.message time { display: block; margin-top: .25rem; }
+.message p { white-space: pre-wrap; }
+.attachment-list { display: flex; flex-wrap: wrap; gap: .75rem; min-width: 0; }
+.support-image { display: flex; flex-direction: column; gap: .4rem; width: 150px; max-width: 100%; }
+.image-name { overflow-wrap: anywhere; }
+.image-thumbnail { padding: 0; cursor: zoom-in; border: 1px solid #bac7ba; border-radius: 6px; background: #fff; overflow: hidden; }
+.image-thumbnail img, .queued-image { display: block; width: 100%; height: 100px; object-fit: contain; }
+.attachment-picker input { max-width: 100%; min-width: 0; font: inherit; }
+.attachment-picker input::file-selector-button { min-height: 44px; margin-right: .5rem; padding: .5rem .75rem; border: 1px solid #bac7ba; border-radius: 6px; background: #fff; color: #244c37; font: inherit; cursor: pointer; }
+.image-dialog { width: min(960px, 94vw); max-height: 94dvh; padding: 1rem; border: 1px solid #bac7ba; border-radius: 10px; overflow: auto; }
+.image-dialog::backdrop { background: #14271dcc; }
+.image-dialog img { display: block; max-width: 100%; max-height: 75dvh; object-fit: contain; margin: 1rem auto; }
+@media (max-width: 430px) {
+  .ticket-workflow { font-size: .8rem; }
+  .conversation-thread .message { padding: .75rem; }
+  .attachment-list { gap: .5rem; }
+  .support-image { width: 130px; }
+}
+.ticket-workflow .badge { display: inline-flex; align-items: center; padding: .25rem .6rem; border: 1px solid #cbd4ca; border-radius: 5px; background: #f4f6f2; font-family: var(--mono, monospace); font-size: .75rem; }
+.ticket-workflow .status-waiting { background: #f7f1e4; color: #735316; border-color: #ded1b6; }
+.ticket-workflow .status-needs_review { background: #e8f1e9; color: #29503c; border-color: #bbcebf; }
+.ticket-workflow .status-resolved { color: #52604f; background: #f0f2ed; }
+
+.image-placeholder { display: grid; place-items: center; min-height: 100px; padding: .5rem; color: #52604f; }

@@ -1,3 +1,52 @@
+# Release pass — 2026-09-29
+
+**NOT VERIFIED — hosted Supabase is not connected or accessible for migration, Storage, function, cleanup, or authenticated production verification.** Local checks below pass; the custom-domain static/demo deployment is being verified separately. Historical review notes remain below.
+
+## Changes and findings
+
+- **Blank domain:** HTTPS HTML returned 200 but referenced `/Resolve/assets/index-DYAfhbmD.js`, which returned 404 with `text/html`. The same JS under `/assets/` returned 200 with JavaScript MIME. Removed repository-name base derivation; Vite defaults to `./`, with `public/CNAME`, canonical and Open Graph URL set to `https://resolve.amgazal.com/`. One production build is served and hard-reloaded at both `/` and `/Resolve/` in dedicated tests. Pages reports HTTPS enforced and an approved certificate.
+- **Conversation:** the RPC already distinguished sends, but status was absent from the ticket header, the queue lacked a Needs review filter, and Waiting could be unassigned. Ordinary Send preserves status (including Waiting and Needs review). Send & wait atomically creates the message, sets Waiting, and claims unassigned work. Requester replies atomically set Needs review, preserving assignment. The composer explains status/ownership, hides redundant Send & wait while Waiting, and the header exposes status and owner. Refresh conversation also refreshes the queue.
+- **Support images:** JPEG/PNG/WebP inputs; maximum three images, 5 MiB original and normalized size each. Browser orientation/decode/resize/re-encode creates PNG with no EXIF/GPS/text chunks. Maximum normalized edge 4096; decoded sources over 48 megapixels are rejected. Text is required. Authenticated Edge ingestion checks signature, permitted chunks, CRCs, dimensions, size, type and extension; clients cannot write Storage directly. Metadata reservations and message linking are explicit, not JSON blobs. Only published attachments are readable through RLS; no internal-note attachment path. Downloads are authenticated, represented by revocable browser object URLs. The server validates PNG structure, not a full pixel decode; browser normalization performs decoding. No GPS is extracted.
+- **Failure handling:** pending images are invisible and cannot be reused across messages or tickets. A failed finalization rolls back message/state/attachment linking together. Daily trusted cleanup removes unpublished reservations older than 24 hours; its setup is a hosted activation prerequisite. Network interruption can leave pending uploads until cleanup. There is no message editing or deletion UI.
+- **UI/accessibility:** public requester and IT replies have distinct labels/backgrounds; internal notes remain separate. Compact previews show filename and size, with removal before sending. A native image dialog supports keyboard/Escape/focus restoration without dismissing the surrounding ticket panel. Lazy thumbnails are keyboard-focusable; downloads start near the viewport or on focus. Phone/desktop layouts were visually inspected; overflow assertions cover 320, 375, 390, 393, 430, 768, 1024, 1280, 1440 and 844×390 landscape in the image flow. Existing role screens retain their visual system, focus handling and reduced-motion rules.
+- **Auth/races:** delayed initial profile results are now discarded after an auth-ended event; a live browser regression proves this. Ticket loads use a generation counter to reject stale results. Session persistence/recovery, expired-auth handling, unprovisioned accounts, admin preview isolation, RLS boundaries and internal-note separation are exercised locally.
+- **Production gating:** no GitHub Supabase variables were configured, and `supabase projects list` reported no management access token. No hosted data was modified. Demo images are in-memory only and explicitly reset on reload. Hosted upload controls require `VITE_TICKET_IMAGES_ENABLED=true`, only after documented verification.
+
+## Verification commands and results
+
+| Command | Result | Count / scope |
+| --- | --- | --- |
+| `npm ci` | PASS | Lockfile installation |
+| `npm audit` | PASS | 0 vulnerabilities |
+| `npm run check` | PASS | TypeScript, 25 unit tests, production build |
+| `npm run test:browser` | PASS | 7 Chromium scenarios; representative axe checks |
+| `npm run test:paths` | PASS | 2 production path/hard-refresh scenarios |
+| `npx supabase start -x studio,realtime,imgproxy,logflare,vector,supavisor` | PASS | Local database/Auth/Storage/Edge Runtime |
+| `npx supabase migration up --local` | PASS | 2 forward migrations; existing local data preserved |
+| `npx supabase functions serve ticket-image` | PASS | Authenticated image endpoint |
+| `npx supabase db lint --level warning` | PASS | No schema errors |
+| `npx supabase test db` | PASS | 50 pgTAP assertions |
+| `npm run test:integration` | PASS | 144 authenticated role/image/workflow assertions |
+| `npm run test:browser:live` | PASS | 6 local live scenarios |
+| Privileged-key signature scan | PASS | 0 secret-key or service-role JWT matches in built JS |
+| Hosted Supabase checks | NOT RUN | Management access and configured project unavailable |
+
+The live browser flow includes staff PNG upload and ordinary Send preserving Assigned, failed Send & wait preserving its draft, retry to Waiting, requester private-image viewing and JPEG reply to Needs review, preserved assignee and hidden internal notes. Integration cases include requester PNG ingestion, staff images, second-requester/other-org/anonymous denial, direct Storage upload denial, unpublished image denial, invalid MIME/SVG/forged bytes/oversize/count/path denial, terminal-ticket reservation denial, and literal malicious filenames.
+
+Coverage limits: Chromium only; no Safari/Firefox/physical-device certification or native 200% text-zoom audit. Token refresh is provided by Supabase's SDK; this pass tests expired authorization and auth-ended races, not a timed hosted token-renewal soak. Existing list limits (200 desk tickets and Data API page limits) remain. Source images are decoded before the 48-megapixel guard, so exceptionally compressed inputs may temporarily consume browser memory. Attachments are added to existing requests in the public conversation, after escalation. Large photographs whose lossless normalization exceeds 5 MiB need a smaller source. No claim of hosted support or exhaustive defect absence is made.
+
+## Files changed
+
+Deployment/config: `.env.example`, three GitHub workflows, `vite.config.ts`, `index.html`, `public/CNAME`, `package.json`, path-test config/server and local live-test server.
+
+Product: `App.tsx`, API/types, new image normalization/validation helpers, conversation/request/ticket/queue components, new image viewer, and `resolve.css`.
+
+Backend: two forward migrations, `supabase/functions/ticket-image`, and trusted `cleanup-ticket-images.ts`.
+
+Verification/docs: image fixtures/unit tests, mock workflow tests, pgTAP/integration/demo/live/path tests, README, DEPLOYMENT, and this review.
+
+---
+
 # Resolve verification checklist
 
 Use this checklist when reviewing a release. The checklist describes checks to run; the dated section below records this review. Backend setup and database commands are in [DEPLOYMENT.md](./DEPLOYMENT.md).

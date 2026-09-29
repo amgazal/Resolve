@@ -62,6 +62,7 @@ export function ITDesk({
     { id: "all", label: "All", rows: tickets },
     { id: "mine", label: "Assigned to me", rows: tickets.filter(t => t.assigneeId === currentUserId) },
     { id: "unassigned", label: "Unassigned", rows: tickets.filter(t => !t.assigneeId && t.status !== "resolved") },
+    { id: "needs_review", label: "Needs review", rows: tickets.filter(t => t.status === "needs_review") },
     { id: "waiting", label: "Waiting", rows: tickets.filter(t => t.status === "waiting") },
   ];
   const ordered = [...(filters.find(f => f.id === filter)?.rows ?? tickets)].sort((a, b) =>

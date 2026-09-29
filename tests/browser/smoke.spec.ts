@@ -164,3 +164,44 @@ test('admin previews saved draft, validates changes, publishes and reads archive
   await page.getByText('Recent admin activity', { exact: true }).click();
   await expect(page.getByText(/tree published ·/)).toBeVisible();
 });
+
+test('support image normalization, thread preview, keyboard viewer, and mobile layout', async ({ page }) => {
+  await enter(page, 'IT Technician');
+  await page.getByRole('button', { name: /Open RSV-2481 from Maya/ }).click();
+  const panel = page.getByRole('dialog', { name: /./ });
+  // Ordinary send on New is status-preserving. The image never changes workflow itself.
+  await panel.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
+  await expect(panel.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
+  await panel.getByLabel('Message', { exact: true }).fill('Check this setting.');
+  await panel.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(panel.getByLabel('Message', { exact: true })).toHaveValue('');
+  await expect(panel.locator('.ticket-workflow')).toContainText('new');
+  await panel.locator('.support-image').first().scrollIntoViewIfNeeded();
+  const thumbnail = panel.getByRole('button', { name: 'View support.png' });
+  await expect(thumbnail).toBeVisible();
+  await thumbnail.click();
+  const viewer = page.getByRole('dialog', { name: 'support.png', exact: true });
+  await expect(viewer).toBeVisible();
+  await accessible(page);
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expect(thumbnail).toBeFocused();
+  await expect(panel).toBeVisible();
+  for (const width of [320,375,390,393,430,768,1024,1280,1440]) {
+    await page.setViewportSize({ width, height: 850 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 844, height: 390 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await panel.getByLabel('Attach image').setInputFiles({ name: 'bad.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') });
+  await expect(panel.getByRole('alert')).toContainText('JPEG, PNG, or WebP');
+  // Browser-generated JPEG follows the same orientation/decode/re-encode pipeline.
+  const jpeg = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 30; c.height = 30; c.getContext('2d')!.fillRect(0,0,30,30); return c.toDataURL('image/jpeg').split(',')[1]!; });
+  await panel.getByLabel('Attach image').setInputFiles({ name: '<script>alert(1)</script>.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });
+  await expect(panel.getByRole('button', { name: /Remove <script>/ })).toBeVisible();
+  await panel.getByLabel('Message', { exact: true }).fill('Please reply with what you see.');
+  await panel.getByRole('button', { name: 'Send & wait for reply', exact: true }).click();
+  await expect(panel.locator('.ticket-workflow')).toContainText('waiting');
+  await expect(panel.locator('.ticket-workflow')).toContainText('Jordan Ellis');
+  await expect(panel.getByRole('button', { name: 'Send & wait for reply', exact: true })).toHaveCount(0);
+});
