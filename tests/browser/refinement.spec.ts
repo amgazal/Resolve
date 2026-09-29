@@ -9,6 +9,25 @@ async function diagnose(page: Page) {
 async function axe(page: Page) { expect((await new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]); }
 test.beforeEach(async ({ page }) => { page.on('pageerror', e => { throw e; }); });
 
+test('attachment is deferred until final review and landing stays uncluttered', async ({ page }) => {
+  await enter(page);
+  await expect(page.getByLabel('Add a screenshot or photo (optional)')).toHaveCount(0);
+  await page.getByLabel('Describe the problem').fill('Wi-Fi connects but websites won\'t load.');
+  await page.getByRole('button', { name: 'Wi-Fi & Network' }).click();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(page.getByLabel('Attach image')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Yes', exact: true }).click();
+  await page.getByRole('button', { name: 'Yes', exact: true }).click();
+  await page.getByRole('button', { name: 'All of them', exact: true }).click();
+  await page.getByRole('button', { name: 'Nothing changed', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
+  await expect(page.getByLabel('Attach image')).toHaveCount(1);
+  await expect(page.locator('.handoff')).toContainText('Review your request');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+});
+
 test('initial evidence stays local, review edits persist, and a skipped handoff is truthful', async ({ page }) => {
   await enter(page);
   await page.getByLabel('Describe the problem').fill('Wrong description');

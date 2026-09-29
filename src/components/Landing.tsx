@@ -1,12 +1,10 @@
 import type { Catalog } from "@/types";
-import { ImageDraft, type ImageDraftState } from "./ImageDraft";
 import { Icon } from "./Icon";
 
 export function Landing({
   catalog, description, setDescription, categoryId, setCategoryId,
-  device, setDevice, os, setOs, onStart, busy, firstName, images,
+  device, setDevice, os, setOs, onStart, busy, firstName,
 }: {
-  images: ImageDraftState;
   catalog: Catalog;
   description: string;
   setDescription: (v: string) => void;
@@ -26,8 +24,7 @@ export function Landing({
         <p className="greeting rise">Hello {firstName} — you've reached the right place.</p>
         <h1 className="display rise" style={{ animationDelay: "60ms" }}>What's going wrong?</h1>
         <p className="lede rise" style={{ animationDelay: "100ms" }}>
-          Describe it however you'd say it out loud. We'll ask a few short questions, walk
-          through the likely fixes with you, and bring in a technician only if we need to.
+          Tell us what’s happening. We’ll narrow it down and bring in IT only if needed.
         </p>
 
         <div className="writebox rise" style={{ animationDelay: "150ms" }}>
@@ -40,8 +37,6 @@ export function Landing({
             aria-label="Describe the problem"
           />
         </div>
-
-        <ImageDraft draft={images} disabled={busy} initial />
 
         <p className="label label-gap rise" style={{ animationDelay: "190ms" }}>
           Which of these is closest?
@@ -77,18 +72,11 @@ export function Landing({
         </div>
 
         <div className="cta rise" style={{ animationDelay: "290ms" }}>
-          <button className="btn btn-primary btn-lg" disabled={!categoryId || busy || images.busy} onClick={onStart}>
+          <button className="btn btn-primary btn-lg" disabled={!categoryId || busy} onClick={onStart}>
             {busy ? "One moment…" : "Start"}
             {busy ? null : <Icon name="arrow" size={18} />}
           </button>
-          {!categoryId ? <span className="hint">Pick the closest match to begin.</span> : null}
         </div>
-
-        <ul className="assurances rise" style={{ animationDelay: "330ms" }}>
-          <li><span className="assurance-k">Short by design</span>A few focused questions, one at a time.</li>
-          <li><span className="assurance-k">Nothing is sent yet</span>You review the handoff before it reaches IT.</li>
-          <li><span className="assurance-k">No repeating yourself</span>If it needs escalation, your answers and attempted fixes go with the ticket.</li>
-        </ul>
       </div>
     </div>
   );

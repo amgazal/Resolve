@@ -58,17 +58,19 @@ button, input, select, textarea { font: inherit; }
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 15px 30px; background: var(--card); border-bottom: 1px solid var(--rule);
   position: sticky; top: 0; z-index: 30;
+  max-width: 100%;
 }
-.wordmark { display: flex; align-items: center; gap: 10px; }
+.wordmark { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .wordmark-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
 .wordmark-name { font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; }
 .wordmark-org {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink-3); padding-left: 11px; border-left: 1px solid var(--rule);
+  white-space: nowrap;
 }
-.masthead-right { display: flex; align-items: center; gap: 10px; }
+.masthead-right { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
 
-.switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+.switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; max-width: 100%; min-width: 0; }
 .switch button {
   border: 0; background: transparent; color: var(--ink-2); cursor: pointer;
   padding: 6px 14px; font-size: 13.5px; font-weight: 450;
@@ -135,6 +137,7 @@ button, input, select, textarea { font: inherit; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 500; }
 .btn-primary:hover:not(:disabled) { background: var(--green-dark); border-color: var(--green-dark); }
+.btn-primary:disabled { background: #D3DAD7; color: #6E7B75; border-color: #D3DAD7; }
 .btn-lg { padding: 12px 22px; font-size: 15px; }
 .btn-sm { padding: 5px 9px; font-size: 13px; }
 .btn-plain { background: transparent; border-color: transparent; color: var(--ink-2); }
@@ -493,6 +496,8 @@ button, input, select, textarea { font: inherit; }
   position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); z-index: 60;
   background: var(--ink); color: #F4F6F2; border-radius: 8px; padding: 10px 18px; font-size: 13.5px;
   box-shadow: 0 12px 28px rgba(22, 33, 29, .22); animation: rise .22s ease;
+  max-width: calc(100vw - 24px); width: max-content;
+  text-align: center;
 }
 
 /* --------------------------------- motion ------------------------------ */
@@ -518,7 +523,7 @@ button, input, select, textarea { font: inherit; }
 
 @media (max-width: 720px) {
   .page { padding: 0 18px 64px; }
-  .masthead { padding: 13px 18px; }
+  .masthead { padding: 13px 18px; flex-wrap: wrap; }
   .wordmark-org, .role-chip { display: none; }
   .display { font-size: 36px; }
   .col-title { font-size: 23px; }
@@ -556,12 +561,14 @@ button, input, select, textarea { font: inherit; }
     flex: 1 1 auto;
     justify-content: flex-end;
     flex-wrap: wrap;
+    gap: 8px;
   }
 
   .switch {
     max-width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
+    flex: 1 1 auto;
   }
   .switch::-webkit-scrollbar { display: none; }
   .switch button { white-space: nowrap; }
@@ -746,6 +753,9 @@ button, input, select, textarea { font: inherit; }
 .image-draft .attachment-list { margin-top: 12px; }
 .review-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .review-tools + .hint { margin-bottom: 20px; }
+.summary-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.summary-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.summary-row .hlabel { margin-bottom: 0; }
 .issue-editor { background: white; padding: 22px; margin: 20px 0; border: 2px solid var(--green); border-radius: 8px; }
 .issue-editor .field { margin-top: 16px; }
 .issue-editor .context { margin: 18px 0; }
@@ -773,3 +783,7 @@ button, input, select, textarea { font: inherit; }
 .editor-side select { width: 100%; min-width: 0; max-width: 100%; }
 
 .request-detail > .col-title { scroll-margin-top: 100px; }
+.review-footer { margin-top: 12px; }
+.subtle { color: var(--ink-3); }
+.fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .fact-grid { grid-template-columns: 1fr; } .summary-actions { justify-content: flex-start; } }

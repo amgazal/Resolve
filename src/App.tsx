@@ -296,7 +296,7 @@ export default function App() {
         {profile ? (
           <div className="masthead-right">
             {surface === "support" && stage !== "landing" ? (
-              <button className="btn btn-plain" onClick={() => void restart()} disabled={busy}>Start over</button>
+              <button className="btn btn-plain btn-sm" onClick={() => void restart()} disabled={busy}>Start over</button>
             ) : null}
 
             {profile.role !== "unprovisioned" ? (
@@ -379,7 +379,7 @@ export default function App() {
           <div className="loading">Getting things ready…</div>
         ) : stage === "landing" ? (
           <Landing
-            catalog={catalog} images={images}
+            catalog={catalog}
             firstName={profile.fullName.split(" ")[0] ?? ""}
             description={description} setDescription={setDescription}
             categoryId={categoryId} setCategoryId={setCategoryId}

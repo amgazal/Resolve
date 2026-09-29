@@ -65,47 +65,50 @@ export function Escalate({
   return (
     <>
       <header className="col-head">
-        <p className="label">Step 3 of 3 · Handing over</p>
-        <h2 className="col-title">Let's make sure IT has what they need.</h2>
-        <p className="hint">This is exactly what your IT team receives. Nothing is sent until you send it.</p>
+        <p className="label">Step 3 of 3 · Review</p>
+        <h2 className="col-title">Review your request</h2>
+        <p className="hint">Check the details, then send it to IT.</p>
       </header>
 
-      <div className="review-tools">
-        <button ref={editButton} className="btn" disabled={busy || editing} onClick={() => setEditing(true)}>Edit issue details</button>
-        {session.facts.length ? <button className="btn btn-plain" disabled={busy || editing} onClick={onUndo}>Change my last answer</button> : null}
-        <button className="btn btn-plain" disabled={busy || editing} onClick={onRestart}>Change category / Start over</button>
-      </div>
-      <p className="hint">To correct an earlier answer, go back one answer at a time. Changing an answer clears the troubleshooting results for this diagnosis.</p>
       {editing ? <IssueDetailsEditor session={session} catalog={catalog} images={images} busy={busy}
         onCancel={() => { setEditing(false); }}
         onSave={async details => { if (await onSaveDetails(details)) { setEditing(false); } }} /> : null}
+
       <article className="handoff">
         <div className="handoff-head">
-          <p className="label">This is what IT will receive</p>
-          <button className="btn btn-plain btn-sm" onClick={copy}>
-            <Icon name="copy" size={15} />Copy as text
-          </button>
+          <div>
+            <p className="label">Request summary</p>
+            <p className="said">Review your request</p>
+          </div>
+          <div className="summary-actions">
+            <button ref={editButton} className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => setEditing(true)}>Edit</button>
+            {session.facts.length ? <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={onUndo}>Review answers</button> : null}
+            <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={onRestart}>Start over</button>
+            <button className="btn btn-plain btn-sm" onClick={copy}><Icon name="copy" size={15} />Copy as text</button>
+          </div>
         </div>
 
         <div className="handoff-body">
           <section>
-            <p className="hlabel">Issue</p>
+            <div className="summary-row">
+              <p className="hlabel">Issue</p>
+              <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => setEditing(true)}>Edit</button>
+            </div>
             <p className="said">{session.description || "No additional description provided."}</p>
           </section>
 
-          <dl className="facts">
-            <div className="fact">
-              <dt>Device</dt>
-              <dd>{[session.device, session.operatingSystem].filter(Boolean).join(" · ")}</dd>
-            </div>
+          <div className="facts fact-grid">
+            <div className="fact"><dt>Device</dt><dd>{[session.device, session.operatingSystem].filter(Boolean).join(" · ")}</dd></div>
             <div className="fact"><dt>Category</dt><dd>{session.categoryLabel}</dd></div>
+          </div>
 
-          </dl>
-
-          <section className="handoff-assessment"><p className="hlabel">Assessment</p><p className="said"><strong>{problem}</strong></p></section>
+          <section className="handoff-assessment">
+            <div className="summary-row"><p className="hlabel">Assessment</p></div>
+            <p className="said"><strong>{problem}</strong></p>
+          </section>
 
           <section>
-            <p className="hlabel">What we learned</p>
+            <div className="summary-row"><p className="hlabel">What we learned</p></div>
             {!session.facts.length ? <p className="hint">No diagnostic facts recorded.</p> : null}
             <dl className="facts">
               {session.facts.map((f, i) => (
@@ -115,15 +118,22 @@ export function Escalate({
           </section>
 
           <section>
-            <p className="hlabel">Troubleshooting attempted</p>
+            <div className="summary-row"><p className="hlabel">What you tried</p></div>
             {session.attempts.length
               ? <ul className="checks">{session.attempts.map((a, i) => <li key={i}>{a.title}</li>)}</ul>
               : <p className="hint">No troubleshooting attempted. IT can help from here.</p>}
           </section>
 
-          {images.images.length ? <section aria-label="Supporting screenshots and photos"><p className="hlabel">Supporting screenshots / photos</p><ImageDraft draft={images} disabled={busy} previewsOnly /></section> : null}
+          <section>
+            <div className="summary-row"><p className="hlabel">Supporting image</p><button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => { /* no-op for layout */ }}>Add</button></div>
+            <ImageDraft draft={images} disabled={busy} pickerOnly />
+            {images.images.length ? <div className="image-collection"><ImageDraft draft={images} disabled={busy} previewsOnly /></div> : null}
+          </section>
 
-          <section className="handoff-outcome"><p className="hlabel">Outcome</p><p className="said"><strong>Issue still not resolved</strong></p></section>
+          <section>
+            <div className="summary-row"><p className="hlabel">Additional note</p><button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => {}}>Edit</button></div>
+            <p className="said">{note.trim() || "No note added."}</p>
+          </section>
         </div>
       </article>
 
@@ -136,9 +146,12 @@ export function Escalate({
           aria-describedby="note-help"
           placeholder="Error message, when it started, or anything else IT should know."
         />
-        <p id="note-help" className="hint">Paste an error message, say when it started, or add anything IT should know.{authIssue ? " Never include passwords, verification codes, or recovery codes." : ""}</p>
+        <p id="note-help" className="hint">{authIssue ? "Don’t include passwords or verification codes." : "Keep it brief. Include what changed and any exact error text."}</p>
       </div>
-      <ImageDraft draft={images} disabled={busy} initial pickerOnly />
+
+      <div className="review-footer">
+        <p className="hint subtle">Nothing is sent until you send it.</p>
+      </div>
 
       <div className="row">
         <button className="btn btn-primary btn-lg" onClick={onSend} disabled={busy || images.busy || editing}>

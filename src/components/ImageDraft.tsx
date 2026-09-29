@@ -35,16 +35,15 @@ export function useImageDraft() {
 }
 export type ImageDraftState = ReturnType<typeof useImageDraft>;
 export function ImageDraft({ draft, disabled = false, initial = false, previewsOnly = false, pickerOnly = false }: { draft: ImageDraftState; disabled?: boolean; initial?: boolean; previewsOnly?: boolean; pickerOnly?: boolean }) {
-  if (!imagesEnabled) return null;
+  if (!imagesEnabled || initial) return null;
+  const pickerLabel = pickerOnly ? 'Attach image' : 'Supporting image (optional)';
   return <div className="image-draft">
     {!previewsOnly ? <>
-      <label className="field attachment-picker"><span className="label">{initial ? 'Add a screenshot or photo (optional)' : 'Attach image'}</span>
+      <label className="field attachment-picker"><span className="label">{pickerLabel}</span>
         <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={disabled || draft.busy || draft.images.length >= 3}
           onChange={e => { const files = Array.from(e.currentTarget.files ?? []); e.currentTarget.value = ''; void draft.select(files); }} />
       </label>
-      <p className="hint">{initial ? 'Useful for error messages, settings screens, or something visible on the device. Nothing uploads until you send the request. ' : 'Add a message for context. '}
-        Up to 3 JPEG, PNG, or WebP images · 5 MiB each. Location metadata is removed. Don’t include passwords, verification codes, or other private credentials.
-        {initial ? ' Selected images stay in this tab and are lost on reload.' : !usingLiveBackend ? ' Demo images reset on reload.' : ''}</p>
+      <p className="hint">{pickerOnly ? 'Up to 3 images. Don’t include passwords or verification codes.' : 'Up to 3 JPG, PNG or WebP images. Don’t include passwords or verification codes.'}</p>
     </> : null}
     {draft.busy ? <p role="status" className="hint">Preparing image…</p> : null}
     {draft.error ? <p role="alert" className="banner">{draft.error}</p> : null}

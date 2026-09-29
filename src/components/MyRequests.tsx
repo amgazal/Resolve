@@ -37,14 +37,14 @@ export function MyRequests({ initialSelected = null, pendingImages }: { initialS
   useEffect(() => { void refresh(); return () => { generation.current++; }; }, [refresh]);
   return <div className="requests">
     <header className="desk-head"><div><p className="label">Your support</p><h1 className="col-title">My requests</h1></div>
-      <button className="btn" disabled={loading || sending} onClick={() => void refresh()}>Refresh requests</button></header>
+      <button className="btn btn-plain btn-sm" disabled={loading || sending} onClick={() => void refresh()}>Refresh</button></header>
     {error ? <p role="alert" className="banner">{error}<button className="btn" onClick={() => void refresh()}>Retry</button></p> : null}
     {loading ? <p role="status">Loading requests…</p> : null}
     <div className="requests-layout"><div className="request-groups">
       {!loading && !tickets.length ? <p className="cardlet">You're all caught up. Requests you send to IT will appear here.</p> : null}
-      {requestGroups(tickets).filter(group => group.tickets.length || group.id === 'reply').map(group => <section key={group.id} className={`request-group group-${group.id}`} aria-labelledby={`group-${group.id}`}>
+      {requestGroups(tickets).filter(group => group.tickets.length).map(group => <section key={group.id} className={`request-group group-${group.id}`} aria-labelledby={`group-${group.id}`}>
         <header><h2 id={`group-${group.id}`} className="hlabel">{group.title} <span className="group-count">{group.tickets.length}</span></h2>
-          <p className="hint">{group.tickets.length ? group.hint : 'Nothing needs your reply right now.'}</p></header>
+          <p className="hint">{group.hint}</p></header>
         <ul>{group.tickets.map(t => <li key={t.id}>
           <button className={`request-card${selected === t.id ? ' selected' : ''}`} aria-pressed={selected === t.id} disabled={sending}
             onClick={() => { if (selected !== t.id) { focusSelection.current = true; generation.current++; setDetail(null); setSelected(t.id); } }}>
