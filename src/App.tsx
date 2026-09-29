@@ -15,6 +15,7 @@ import { Escalate } from "@/components/Escalate";
 import { Resolved, Sent } from "@/components/Closing";
 import { ITDesk } from "@/technician/ITDesk";
 import { TreeEditor } from "@/admin/TreeEditor";
+import { categoryForSuggestion, inferDescription } from "@/api/inference";
 
 import "@/styles/resolve.css";
 
@@ -63,10 +64,12 @@ export default function App() {
   const [stage, setStage] = useState<Stage>("landing");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [device, setDevice] = useState("Laptop");
-  const [os, setOs] = useState("macOS");
+  const [device, setDevice] = useState("");
+  const [os, setOs] = useState("");
+  const manualFields = useRef(new Set<"category" | "device" | "os">());
+  const automaticSuggestions = useRef({ category: "", device: "", os: "" });
+  const [suggestedFields, setSuggestedFields] = useState(new Set<string>());
   const [session, setSession] = useState<SessionState | null>(null);
-  const [stepPhase, setStepPhase] = useState<"idle" | "trying">("idle");
   const [note, setNote] = useState("");
   const images = useImageDraft();
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
@@ -117,12 +120,32 @@ export default function App() {
       .then((c) => {
         if (cancelled) return;
         setCatalog(c);
-        if (c.devices[0]) setDevice(c.devices[0]);
-        if (c.systems[0]) setOs(c.systems[0]);
       })
       .catch(() => { if (!cancelled) setCatalogError(true); });
     return () => { cancelled = true; };
   }, [profile, catalogRetry]);
+
+  useEffect(() => {
+    if (!catalog) return;
+    const next = inferDescription(description);
+    const nextCategory = categoryForSuggestion(catalog, next.categorySlug) ?? "";
+    const suggestions = { category: nextCategory, device: next.device ?? "", os: next.operatingSystem ?? "" };
+    const changed = new Set<string>();
+    if (!manualFields.current.has("category") && (!categoryId || categoryId === automaticSuggestions.current.category)) {
+      setCategoryId(nextCategory || null);
+      if (nextCategory) changed.add("category");
+    }
+    if (!manualFields.current.has("device") && (!device || device === automaticSuggestions.current.device)) {
+      setDevice(suggestions.device);
+      if (suggestions.device) changed.add("device");
+    }
+    if (!manualFields.current.has("os") && (!os || os === automaticSuggestions.current.os)) {
+      setOs(suggestions.os);
+      if (suggestions.os) changed.add("os");
+    }
+    automaticSuggestions.current = suggestions;
+    setSuggestedFields(changed);
+  }, [catalog, description]);
 
   // The live backend can resume an unfinished diagnosis after a refresh.
   // Demo mode intentionally stays ephemeral, so a stale mock id is never restored.
@@ -190,7 +213,6 @@ export default function App() {
     if (!s) return;
     setSession(s);
     if (s.diagnosis) {
-      setStepPhase("idle");
       setStage("fix");
     }
   }
@@ -199,7 +221,7 @@ export default function App() {
     if (!session) return;
     if (session.attempts.length && !window.confirm("Change your last answer? Troubleshooting results for this diagnosis will be cleared so IT receives an accurate report.")) return;
     const s = await run(() => api.undoLastAnswer(session.id));
-    if (s) { setSession(s); setStepPhase("idle"); setStage(stageForSession(s)); }
+    if (s) { setSession(s); setStage(stageForSession(s)); }
   }
 
   async function mark(outcome: "fixed" | "failed") {
@@ -209,7 +231,6 @@ export default function App() {
     const s = await run(() => api.recordAttempt(session.id, step.id, outcome));
     if (!s) return;
     setSession(s);
-    setStepPhase("idle");
     if (outcome === "fixed") setStage("resolved");
     else if (failedSoFar + 1 >= (s.diagnosis?.steps.length ?? 0)) setStage("escalate");
   }
@@ -254,7 +275,8 @@ export default function App() {
     storeActiveSession(null);
     images.clear(); setSentTicketId(null); setImageFailure(false);
     setStage("landing"); setDescription(""); setCategoryId(null); setSession(null);
-    setNote(""); setReference(null); setStepPhase("idle");
+    setNote(""); setReference(null);
+    manualFields.current.clear(); automaticSuggestions.current = { category: "", device: "", os: "" }; setSuggestedFields(new Set());
   }
 
   async function restart() {
@@ -348,7 +370,7 @@ export default function App() {
           <span>{error}</span>
           {usingLiveBackend && session ? <button className="btn btn-plain btn-sm" disabled={busy} onClick={async () => {
             const restored = await run(() => api.getSession(session.id));
-            if (restored) { setSession(restored); setStage(stageForSession(restored)); setStepPhase("idle"); }
+            if (restored) { setSession(restored); setStage(stageForSession(restored)); }
           }}>Reload saved progress</button> : null}
           <button className="btn btn-plain btn-sm" onClick={() => setError(null)}>Dismiss</button>
         </div>
@@ -382,9 +404,10 @@ export default function App() {
             catalog={catalog}
             firstName={profile.fullName.split(" ")[0] ?? ""}
             description={description} setDescription={setDescription}
-            categoryId={categoryId} setCategoryId={setCategoryId}
-            device={device} setDevice={setDevice}
-            os={os} setOs={setOs}
+            categoryId={categoryId} setCategoryId={(value) => { manualFields.current.add("category"); setSuggestedFields(current => { const next = new Set(current); next.delete("category"); return next; }); setCategoryId(value); }}
+            device={device} setDevice={(value) => { manualFields.current.add("device"); setSuggestedFields(current => { const next = new Set(current); next.delete("device"); return next; }); setDevice(value); }}
+            os={os} setOs={(value) => { manualFields.current.add("os"); setSuggestedFields(current => { const next = new Set(current); next.delete("os"); return next; }); setOs(value); }}
+            suggestedFields={suggestedFields}
             onStart={start} busy={busy}
           />
         ) : stage === "resolved" && session ? (
@@ -404,14 +427,13 @@ export default function App() {
                 <Diagnose session={session} onChoose={choose} onUndo={undo} busy={busy} />
               ) : stage === "fix" ? (
                 <Fix
-                  session={session} activeIndex={failedSoFar} phase={stepPhase}
-                  setPhase={setStepPhase} onMark={mark}
+                  session={session} activeIndex={failedSoFar} onMark={mark}
                   onSkip={() => setStage("escalate")} busy={busy}
                 />
               ) : (
                 <Escalate
                   session={session} note={note} setNote={setNote} catalog={catalog} images={images} onSaveDetails={saveDetails} onUndo={undo} onRestart={restart}
-                  onSend={send} onBack={() => setStage("fix")} busy={busy} flash={flash}
+                  onSend={send} onBack={() => setStage("fix")} busy={busy}
                 />
               )}
             </section>

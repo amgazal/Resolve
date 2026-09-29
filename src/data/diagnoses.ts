@@ -62,7 +62,7 @@ export const DIAGNOSES: Record<string, DiagnosisSeed> = {
     title: "Your verification step is failing, not your password.",
     short: "MFA issue", node: "MFA failure", priority: "high",
     steps: [
-      ["Check your device clock", "Set date and time to update automatically. Codes fail when the clock drifts by more than a minute."],
+      ["Check your device clock", "Set date and time to update automatically. Time-based codes can fail when the device clock is incorrect. If the setting is managed or unavailable, ask IT."],
       ["Request a fresh code", "At the service’s sign-in prompt, choose Resend code once if that option is offered. For an authenticator app, wait for the next code instead. Use only the newest code in the service’s verification field; do not repeatedly request codes."],
       ["Try a backup method", "At the sign-in prompt, look for Try another way. If already registered, choose another verification method or device, or use a saved recovery code there. If you have none, skip to IT. Never put passwords, verification codes, or recovery codes into Resolve."],
     ],
@@ -71,7 +71,7 @@ export const DIAGNOSES: Record<string, DiagnosisSeed> = {
     title: "The account is locked and needs an administrator to release it.",
     short: "Account lockout", node: "Lockout", priority: "high",
     steps: [
-      ["Wait fifteen minutes", "Close the sign-in prompt and wait fifteen minutes without retrying. Then open it again. Some organizations require IT to unlock the account; waiting may not be enough."],
+      ["Follow any wait time shown", "Close the sign-in prompt and follow any wait time it gives without repeatedly retrying. If it gives no wait time, or the account remains locked, send it to IT."],
       ["Try once, carefully", "Return to the service’s sign-in page and try once after the wait. If it still says locked, paste that error into Additional note for IT. Never include your password or verification code."],
     ],
   },

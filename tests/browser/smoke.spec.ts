@@ -4,7 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 async function enter(page: Page, role: string) {
   await page.goto('./');
   await page.getByRole('button', { name: role, exact: false }).click();
-  if (role === 'Requester') await expect(page.getByRole('heading', { name: "What's going wrong?" })).toBeVisible();
+  if (role === 'Requester') { await expect(page.getByRole('heading', { name: "What's going wrong?" })).toBeVisible(); await page.getByRole('combobox', { name: 'Device', exact: true }).selectOption('Laptop'); await page.getByRole('combobox', { name: 'System', exact: true }).selectOption('macOS'); }
   if (role === 'IT Technician') await expect(page.getByRole('button', { name: 'Refresh queue' })).toBeVisible();
   if (role === 'Administrator') await expect(page.getByLabel('Answer text').first()).toBeVisible();
 }
@@ -25,11 +25,10 @@ test('requester answers, tries a fix, and sends the reviewed handoff', async ({ 
   for (const name of ['Yes', 'Yes', 'All of them', 'Nothing changed']) {
     await page.getByRole('button', { name, exact: true }).click();
   }
-  await page.getByRole('button', { name: 'Try this', exact: true }).click();
   await page.getByRole('button', { name: 'Still not working' }).click();
   await page.getByRole('button', { name: 'Skip ahead' }).click();
   await accessible(page);
-  await page.getByLabel('Additional note for IT (optional)').fill('Started this morning.');
+  await page.getByLabel('Note for IT (optional)').fill('Started this morning.');
   await page.getByRole('button', { name: 'Send to IT', exact: true }).click();
   await expect(page.getByText(/RSV-\d+/).first()).toBeVisible();
   await page.reload();
@@ -46,7 +45,7 @@ test('technician modal traps focus, accepts a note, resolves and restores focus'
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Mark resolved' })).toBeVisible();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: 'Save to Path Library' })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: /Path Library/ })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close ticket detail' })).toBeFocused();
   await page.keyboard.press('Tab');
@@ -104,7 +103,7 @@ test('public conversation returns waiting work to the personal queue and saves a
   await enter(page, 'IT Technician');
   await page.getByRole('button', { name: /Open RSV-2481 from Maya/ }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Assign to me', exact: true }).click();
+  await dialog.getByRole('combobox', { name: 'Assignee', exact: true }).selectOption('u_jordan');
   await dialog.getByLabel('Add an internal note').fill('Private cable inventory');
   await dialog.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(dialog.getByLabel('Add an internal note')).toHaveValue('');
@@ -153,11 +152,11 @@ test('admin previews saved draft, validates changes, publishes and reads archive
   await page.getByRole('button', { name: 'Add a question', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Publish this version' })).toBeDisabled();
   await expect(page.getByText('Unreachable: New question', { exact: false })).toBeVisible();
-  page.once('dialog', d => d.accept());
   await page.getByRole('group', { name: 'New question', exact: true }).getByRole('button', { name: 'Remove this question', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove question', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Publish this version' })).toBeEnabled();
-  page.once('dialog', d => d.accept());
   await page.getByRole('button', { name: 'Publish this version' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /Publish version/ }).click();
   await expect(page.getByRole('button', { name: 'Start the next version' })).toBeVisible();
   await page.getByLabel('Version history').selectOption({ label: await page.getByLabel('Version history').locator('option').filter({ hasText: 'archived' }).first().textContent() ?? '' });
   await expect(page.getByLabel('Answer text').first()).toBeDisabled();
@@ -169,13 +168,13 @@ test('support image normalization, thread preview, keyboard viewer, and mobile l
   await enter(page, 'IT Technician');
   await page.getByRole('button', { name: /Open RSV-2481 from Maya/ }).click();
   const panel = page.getByRole('dialog', { name: /./ });
-  // Ordinary send on New is status-preserving. The image never changes workflow itself.
+  // Ordinary send claims an unassigned ticket and moves it to assigned.
   await panel.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
   await expect(panel.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
   await panel.getByLabel('Message', { exact: true }).fill('Check this setting.');
   await panel.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(panel.getByLabel('Message', { exact: true })).toHaveValue('');
-  await expect(panel.locator('.ticket-workflow')).toContainText('new');
+  await expect(panel.locator('.ticket-workflow')).toContainText('assigned');
   await panel.locator('.support-image').first().scrollIntoViewIfNeeded();
   const thumbnail = panel.getByRole('button', { name: 'View support.png' });
   await expect(thumbnail).toBeVisible();

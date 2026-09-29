@@ -69,7 +69,7 @@ export function ITDesk({
     Number(a.status === "resolved") - Number(b.status === "resolved") ||
     Number(b.status === "needs_review") - Number(a.status === "needs_review") ||
     (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3) ||
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    new Date(b.activityAt).getTime() - new Date(a.activityAt).getTime());
 
   const tiles: [string, string | number][] = [
     ["Open", stats.open],
@@ -111,7 +111,7 @@ export function ITDesk({
                 <thead>
                   <tr>
                     <th>Requester</th><th>Issue</th><th>Assessment</th>
-                    <th>Priority</th><th>Status</th><th className="r">Age</th>
+                    <th>Priority</th><th>Status</th><th className="r">Activity</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -129,7 +129,7 @@ export function ITDesk({
                       <td className="assess">{t.diagnosisLabel ?? "—"}</td>
                       <td><span className={`pri pri-${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span></td>
                       <td><span className={`stat stat-${t.status}`}>{STATUS_LABEL[t.status]}</span></td>
-                      <td className="r muted">{relativeAge(t.createdAt)}</td>
+                      <td className="r muted" title={new Date(t.activityAt).toLocaleString()}>{relativeAge(t.activityAt)} ago</td>
                     </tr>
                   ))}
                 </tbody>
@@ -146,7 +146,7 @@ export function ITDesk({
                     <span className="queue-card-top">
                       <span>
                         <span className="who">{t.requester}</span>
-                        <span className="ref-sm">{t.reference} · {relativeAge(t.createdAt)}</span>
+                        <span className="ref-sm" title={new Date(t.activityAt).toLocaleString()}>{t.reference} · Updated {relativeAge(t.activityAt)} ago</span>
                       </span>
                       <span className={`pri pri-${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>
                     </span>

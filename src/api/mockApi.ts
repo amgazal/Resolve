@@ -10,7 +10,7 @@ const demoImages = new Map<string, { attachment: TicketAttachment; ticketId: str
  */
 
 import type {
-  Api, AttemptOutcome, Catalog, Diagnosis, DiagnosisSummary, EditableNode,
+  Api, AssignableStaff, AttemptOutcome, Catalog, Diagnosis, DiagnosisSummary, EditableNode,
   EditableOption, EditableTree, Fact, Priority, Profile, Question, QueueStats,
   SavedRoute, SessionState, Step, TicketDetail, TicketRow, TicketStatus, TrailNode, TicketMessage, RequesterTicket, AdminAuditEvent,
 } from "@/types";
@@ -249,6 +249,7 @@ const rowOf = (t: MTicket): TicketRow => ({
   categoryLabel: t.categoryLabel, categoryShort: t.categoryShort,
   diagnosisLabel: t.diagnosisLabel, subject: t.subject,
   priority: t.priority, status: t.status, createdAt: t.createdAt,
+  activityAt: t.messages.reduce((latest, message) => message.createdAt > latest ? message.createdAt : latest, t.resolvedAt ?? t.createdAt),
 });
 
 const demoStarted = new Date().toISOString();
@@ -260,6 +261,16 @@ function audit(treeId: string, action: string, target: string) {
 const requesterRow = (t: MTicket): RequesterTicket => ({ id: t.id, reference: t.reference, subject: t.subject,
   status: t.status, categoryLabel: t.categoryLabel, createdAt: t.createdAt,
   lastActivityAt: t.messages.reduce((latest, m) => m.createdAt > latest ? m.createdAt : latest, t.resolvedAt ?? t.createdAt) });
+
+function routeSnapshot(t: MTicket) {
+  const session = sessions[t.sessionId]!;
+  return {
+    category: t.categoryLabel,
+    diagnosis: diagnoses[t.diagnosisId!]?.title ?? "Needs triage",
+    path: session.answers.map(a => ({ question: nodes[a.nodeId]!.question, answer: options[a.optionId]!.label })),
+    attempts: state(session.id).attempts,
+  };
+}
 
 /* ------------------------------- the adapter ---------------------------- */
 
@@ -413,9 +424,12 @@ export const mockApi: Api = {
       demoImages.set(id, { ticketId, blob: image.file, attachment: { id, messageId, filename: image.file.name, size: image.file.size, width: image.width, height: image.height } });
     }
     t.messages.push({ id: messageId, author: user.fullName, senderKind: owner ? "requester" : "staff", body: clean, createdAt: new Date().toISOString() });
-    if (owner && t.status === "waiting") t.status = "needs_review";
-    else if (!owner && waitForReply) {
+    if (owner) t.status = "needs_review";
+    else if (waitForReply) {
       t.status = "waiting";
+      if (!t.assigneeId) { t.assigneeId = user.id; t.assignee = user.fullName; }
+    } else {
+      t.status = "assigned";
       if (!t.assigneeId) { t.assigneeId = user.id; t.assignee = user.fullName; }
     }
     return wait(undefined);
@@ -443,8 +457,33 @@ export const mockApi: Api = {
       description: s.description, device: s.device, operatingSystem: s.operatingSystem,
       userNote: t!.userNote, facts: s.facts, attempts: s.attempts,
       path: s.path.map((n) => ({ ...n, state: "known" as const })),
-      notes: t!.notes, messages: [...t.messages],
+      notes: t!.notes, messages: [...t.messages], pathSaved: await mockApi.isRouteSaved(t.id),
     });
+  },
+
+  async getAssignableStaff(): Promise<AssignableStaff[]> {
+    staff();
+    return wait(Object.values(PEOPLE).filter(person => person.role === "technician" || person.role === "admin").map(({ id, fullName }) => ({ id, fullName })));
+  },
+
+  async assignTicket(id, assigneeId) {
+    staff();
+    const ticket = tickets.find(item => item.id === id) ?? fail("Ticket not found");
+    if (ticket.status === "resolved") fail("Resolved tickets cannot be reassigned");
+    if (assigneeId !== null) {
+      const assignee = Object.values(PEOPLE).find(person => person.id === assigneeId && (person.role === "technician" || person.role === "admin"));
+      if (!assignee) fail("That staff member is not available");
+      ticket.assigneeId = assignee!.id; ticket.assignee = assignee!.fullName;
+    } else {
+      ticket.assigneeId = null; ticket.assignee = null;
+    }
+    return wait(undefined);
+  },
+
+  async isRouteSaved(ticketId) {
+    staff();
+    const ticket = tickets.find(item => item.id === ticketId) ?? fail("Ticket not found");
+    return wait(Boolean(routeFingerprints.get(JSON.stringify(routeSnapshot(ticket)))));
   },
 
   async updateTicket(id, patch) {
@@ -491,12 +530,7 @@ export const mockApi: Api = {
   async saveRoute(ticketId) {
     const user = staff();
     const t = tickets.find(t => t.id === ticketId) ?? fail("Ticket not found");
-    const session = sessions[t.sessionId]!;
-    const snapshot = {
-      category: t.categoryLabel, diagnosis: diagnoses[t.diagnosisId!]?.title ?? "Needs triage",
-      path: session.answers.map(a => ({ question: nodes[a.nodeId]!.question, answer: options[a.optionId]!.label })),
-      attempts: state(session.id).attempts,
-    };
+    const snapshot = routeSnapshot(t);
     const fingerprint = JSON.stringify(snapshot);
     const existing = routeFingerprints.get(fingerprint);
     if (existing) return wait(existing);

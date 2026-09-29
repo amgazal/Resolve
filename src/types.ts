@@ -108,6 +108,12 @@ export interface TicketRow {
   priority: Priority;
   status: TicketStatus;
   createdAt: string;
+  activityAt: string;
+}
+
+export interface AssignableStaff {
+  id: string;
+  fullName: string;
 }
 
 export interface TicketNote {
@@ -152,6 +158,7 @@ export interface TicketDetail extends TicketRow {
   attempts: Attempt[];
   path: TrailNode[];
   notes: TicketNote[];
+  pathSaved: boolean;
 }
 
 export interface QueueStats {
@@ -261,6 +268,9 @@ export interface Api {
 
   getTickets(): Promise<TicketRow[]>;
   getTicket(id: string): Promise<TicketDetail>;
+  getAssignableStaff(): Promise<AssignableStaff[]>;
+  assignTicket(ticketId: string, assigneeId: string | null): Promise<void>;
+  isRouteSaved(ticketId: string): Promise<boolean>;
   updateTicket(
     id: string,
     patch: { status?: TicketStatus; priority?: Priority; assignToMe?: boolean }

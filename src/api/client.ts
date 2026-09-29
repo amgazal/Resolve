@@ -16,7 +16,7 @@
 import { AUTH_EXPIRED_EVENT } from "./authEvents";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
-  Api, Catalog, DiagnosisSummary, EditableTree, Profile, QueueStats,
+  Api, AssignableStaff, Catalog, DiagnosisSummary, EditableTree, Profile, QueueStats,
   SavedRoute, SessionState, TicketDetail, TicketRow, RequesterTicket, RequesterTicketDetail, TreeValidation,
 } from "@/types";
 
@@ -198,7 +198,7 @@ export const supabaseApi: Api = {
       id: t.id, reference: t.reference, requester: t.requester_name, assignee: t.assignee_name, assigneeId: t.assignee_id,
       categoryLabel: t.category_label, categoryShort: t.category_short,
       diagnosisLabel: t.diagnosis_label, subject: t.subject,
-      priority: t.priority, status: t.status, createdAt: t.created_at,
+      priority: t.priority, status: t.status, createdAt: t.created_at, activityAt: t.activity_at ?? t.created_at,
     }));
   },
 
@@ -206,12 +206,13 @@ export const supabaseApi: Api = {
     const { data: t, error } = await db().from("ticket_queue").select("*").eq("id", id).single();
     if (error) readable(error);
 
-    const [notes, session, messages] = await Promise.all([
+    const [notes, session, messages, pathSaved] = await Promise.all([
       db().from("ticket_notes")
         .select("body, created_at, users(full_name)")
         .eq("ticket_id", id).order("created_at"),
       rpc<SessionState>("get_session_state", { p_session_id: t.session_id }),
       db().from("ticket_messages").select("id, sender_name, sender_kind, body, created_at").eq("ticket_id", id).order("created_at").order("id"),
+      rpc<boolean>("ticket_path_saved", { p_ticket_id: id }),
     ]);
 
     if (notes.error) readable(notes.error);
@@ -221,7 +222,7 @@ export const supabaseApi: Api = {
       id: t.id, reference: t.reference, requester: t.requester_name, assignee: t.assignee_name, assigneeId: t.assignee_id,
       categoryLabel: t.category_label, categoryShort: t.category_short,
       diagnosisLabel: t.diagnosis_label, subject: t.subject, priority: t.priority,
-      status: t.status, createdAt: t.created_at,
+      status: t.status, createdAt: t.created_at, activityAt: t.activity_at ?? t.created_at,
       description: t.description, device: t.device, operatingSystem: t.operating_system,
       userNote: t.user_note,
       messages: (messages.data ?? []).map((m) => ({ id: m.id, author: m.sender_name, senderKind: m.sender_kind, body: m.body, createdAt: m.created_at })),
@@ -233,8 +234,13 @@ export const supabaseApi: Api = {
         body: n.body,
         createdAt: n.created_at,
       })),
+      pathSaved,
     };
   },
+
+  getAssignableStaff: () => rpc<AssignableStaff[]>("get_assignable_staff"),
+  assignTicket: (ticketId, assigneeId) => rpc("assign_ticket", { p_ticket_id: ticketId, p_assignee_id: assigneeId }),
+  isRouteSaved: (ticketId) => rpc<boolean>("ticket_path_saved", { p_ticket_id: ticketId }),
 
   async updateTicket(id, patch) {
     await rpc("update_ticket", {

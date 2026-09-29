@@ -3,12 +3,10 @@ import { stepGuidance, stepTitle, authenticationDiagnoses } from "@/data/guidanc
 import { Icon } from "./Icon";
 
 export function Fix({
-  session, activeIndex, phase, setPhase, onMark, onSkip, busy,
+  session, activeIndex, onMark, onSkip, busy,
 }: {
   session: SessionState;
   activeIndex: number;
-  phase: "idle" | "trying";
-  setPhase: (p: "idle" | "trying") => void;
   onMark: (outcome: "fixed" | "failed") => void;
   onSkip: () => void;
   busy: boolean;
@@ -42,23 +40,17 @@ export function Fix({
                   <>
                     <p className="label active-step-label">Current step{session.operatingSystem && session.operatingSystem !== "Not sure" ? ` · ${session.operatingSystem}` : ""}</p>
                     <p className="step-detail">{stepGuidance(dx.key, s, session.operatingSystem)}</p>
-                    {phase === "idle" ? (
-                      <button className="btn btn-primary" onClick={() => setPhase("trying")}>
-                        Try this
-                      </button>
-                    ) : (
-                      <div className="rise">
-                        <p className="step-ask">How did that go?</p>
-                        <div className="choices">
-                          <button className="choice choice-good" disabled={busy} onClick={() => onMark("fixed")}>
-                            That fixed it
-                          </button>
-                          <button className="choice" disabled={busy} onClick={() => onMark("failed")}>
-                            Still not working
-                          </button>
-                        </div>
+                    <div className="step-result">
+                      <p className="label">After you&apos;ve tried it</p>
+                      <div className="choices">
+                        <button className="choice choice-good" disabled={busy} onClick={() => onMark("fixed")}>
+                          It worked
+                        </button>
+                        <button className="choice" disabled={busy} onClick={() => onMark("failed")}>
+                          Still not working
+                        </button>
                       </div>
-                    )}
+                    </div>
                   </>
                 ) : stateName === "done" ? (
                   <p className="step-detail muted">Tried — didn't fix the issue.</p>

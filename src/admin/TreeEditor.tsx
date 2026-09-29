@@ -25,6 +25,7 @@ import { Icon } from "@/components/Icon";
  */
 
 type Target = { kind: "node"; id: string } | { kind: "dx"; id: string } | null;
+type Confirmation = { title: string; body: string; confirmLabel: string; action: () => void | Promise<void> };
 
 const targetValue = (o: { nextNodeId: string | null; diagnosisId: string | null }) =>
   o.nextNodeId ? `node:${o.nextNodeId}` : o.diagnosisId ? `dx:${o.diagnosisId}` : "";
@@ -51,6 +52,8 @@ export function TreeEditor({
   const [versions, setVersions] = useState<TreeVersion[]>([]);
   const [audit, setAudit] = useState<AdminAuditEvent[]>([]);
   const [preview, setPreview] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const confirmationRef = useRef<HTMLDialogElement>(null);
   const lock = useRef(false);
   const requestId = useRef(0);
 
@@ -140,8 +143,21 @@ export function TreeEditor({
   }, [tree, categoryId, onError]);
   const canPublish = tree?.status === "draft" && validation?.valid;
 
+  useEffect(() => {
+    if (confirmation) confirmationRef.current?.showModal();
+    else if (confirmationRef.current?.open) confirmationRef.current.close();
+  }, [confirmation]);
+
   return (
     <div className="editor">
+      <dialog ref={confirmationRef} className="confirm-dialog" onCancel={(event) => { event.preventDefault(); setConfirmation(null); }}>
+        {confirmation ? <form method="dialog" onSubmit={(event) => { event.preventDefault(); const action = confirmation.action; setConfirmation(null); void action(); }}>
+          <p className="label">Resolve editor</p>
+          <h2 className="col-title">{confirmation.title}</h2>
+          <p>{confirmation.body}</p>
+          <div className="row"><button className="btn" type="button" onClick={() => setConfirmation(null)}>Cancel</button><button className="btn btn-primary" type="submit">{confirmation.confirmLabel}</button></div>
+        </form> : null}
+      </dialog>
       <header className="desk-head">
         <div>
           <p className="label">Question editor</p>
@@ -192,10 +208,10 @@ export function TreeEditor({
                 isOrphan={Boolean(validation?.issues.some(i => i.code === "unreachable" && i.nodeId === node.id))}
                 busy={busy || tree.status !== "draft"}
                 onSaveNode={(patch) => run(() => api.saveNode(tree.id, { id: node.id, ...patch }))}
-                onDeleteNode={() => { if (window.confirm("Remove this question and its answers? Unsaved edits to it will be lost.")) void run(() => api.deleteNode(tree.id, node.id), "Question removed"); }}
+                onDeleteNode={() => setConfirmation({ title: "Remove this question?", body: "Its answer branches will be removed too. Unsaved edits to this question will be lost.", confirmLabel: "Remove question", action: () => run(() => api.deleteNode(tree.id, node.id), "Question removed") })}
                 onSetRoot={() => run(() => api.setRootNode(tree.id, node.id), "Now the first question")}
                 onSaveOption={(option) => run(() => api.saveOption(tree.id, node.id, option))}
-                onDeleteOption={(id) => { if (window.confirm("Remove this answer branch?")) void run(() => api.deleteOption(tree.id, node.id, id), "Answer removed"); }}
+                onDeleteOption={(id) => setConfirmation({ title: "Remove this answer branch?", body: "Anyone following this answer will no longer reach its current destination.", confirmLabel: "Remove branch", action: () => run(() => api.deleteOption(tree.id, node.id, id), "Answer removed") })}
               />
             ))}
 
@@ -248,7 +264,7 @@ export function TreeEditor({
                   disabled={busy || !canPublish}
                   onClick={() => {
                     if (hasUnsavedChanges()) { onError("Save or discard your edits before publishing."); return; }
-                    if (window.confirm("Publish this version? New sessions will use these questions. Existing sessions keep their original version.")) void run(() => api.publishTree(tree.id), "Published — this is live now");
+                    setConfirmation({ title: `Publish version ${tree.version}?`, body: "New sessions will use this version. Existing sessions keep the version they already started.", confirmLabel: `Publish version ${tree.version}`, action: () => run(() => api.publishTree(tree.id), "Published — this is live now") });
                   }}
                 >
                   Publish this version

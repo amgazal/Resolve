@@ -213,6 +213,49 @@ describe.sequential("final workflow guards", () => {
   });
 });
 
+describe.sequential("public message ownership matrix", () => {
+  async function newTicket() {
+    await signIn("maya@northgate.test");
+    const category = (await mockApi.getCatalog()).categories.find(c => c.slug === "other")!;
+    let session = await mockApi.startSession({ categoryId: category.id, description: "Workflow matrix ticket", device: "Laptop", operatingSystem: "macOS" });
+    while (session.node) session = await mockApi.answer(session.id, session.node.options[0]!.id);
+    return mockApi.escalate(session.id, "Matrix note");
+  }
+
+  it("claims ordinary sends, preserves owners, and promotes every requester reply", async () => {
+    const first = await newTicket();
+    await signIn("jordan@northgate.test");
+    await mockApi.sendTicketMessage(first.id, "Ordinary send");
+    expect((await mockApi.getTicket(first.id)).assigneeId).toBe("u_jordan");
+    await signIn("sam@northgate.test");
+    await mockApi.sendTicketMessage(first.id, "Collaborative send");
+    expect((await mockApi.getTicket(first.id)).assigneeId).toBe("u_jordan");
+    await mockApi.sendTicketMessage(first.id, "Wait for reply", true);
+    expect((await mockApi.getTicket(first.id)).status).toBe("waiting");
+    await signIn("maya@northgate.test");
+    await mockApi.sendTicketMessage(first.id, "Here is more context");
+    await signIn("jordan@northgate.test");
+    expect((await mockApi.getTicket(first.id)).status).toBe("needs_review");
+    await signIn("sam@northgate.test");
+    await mockApi.sendTicketMessage(first.id, "Handled");
+    expect((await mockApi.getTicket(first.id)).status).toBe("assigned");
+    expect((await mockApi.getTicket(first.id)).assigneeId).toBe("u_jordan");
+    await mockApi.assignTicket(first.id, "u_sam");
+    expect((await mockApi.getTicket(first.id)).assigneeId).toBe("u_sam");
+    await mockApi.updateTicket(first.id, { status: "resolved" });
+    await expect(mockApi.assignTicket(first.id, "u_jordan")).rejects.toThrow(/resolved/i);
+  });
+
+  it("lets an unassigned Send & wait claim the ticket atomically", async () => {
+    const ticket = await newTicket();
+    await signIn("sam@northgate.test");
+    await mockApi.sendTicketMessage(ticket.id, "Waiting on details", true);
+    const updated = await mockApi.getTicket(ticket.id);
+    expect(updated.status).toBe("waiting");
+    expect(updated.assigneeId).toBe("u_sam");
+  });
+});
+
 describe.sequential("product completion", () => {
   it("separates public replies from notes, preserves assignment, and deduplicates reusable paths", async () => {
     await signIn("maya@northgate.test");
@@ -246,7 +289,7 @@ describe.sequential("product completion", () => {
     expect(updated.status).toBe("needs_review");
     expect(updated.assigneeId).toBe("u_jordan");
     await mockApi.sendTicketMessage(ticket.id, "Reviewing your reply");
-    expect((await mockApi.getTicket(ticket.id)).status).toBe("needs_review");
+    expect((await mockApi.getTicket(ticket.id)).status).toBe("assigned");
     await mockApi.updateTicket(ticket.id, { status: "resolved" });
     await expect(mockApi.sendTicketMessage(ticket.id, "Reopen")).rejects.toThrow(/resolved/i);
   });

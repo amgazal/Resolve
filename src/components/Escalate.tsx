@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ImageDraft, type ImageDraftState } from "./ImageDraft";
 import { IssueDetailsEditor } from "./IssueDetailsEditor";
 import type { Catalog, SessionState } from "@/types";
-import { Icon } from "./Icon";
 
 /**
  * The handoff is shown as a document rather than a terminal dump. The
@@ -10,7 +9,7 @@ import { Icon } from "./Icon";
  * signing off on a summary about them — it should look like one.
  */
 export function Escalate({
-  session, note, setNote, onSend, onBack, busy, flash, catalog, images, onSaveDetails, onUndo, onRestart,
+  session, note, setNote, onSend, onBack, busy, catalog, images, onSaveDetails, onUndo, onRestart,
 }: {
   session: SessionState;
   catalog: Catalog; images: ImageDraftState;
@@ -21,7 +20,6 @@ export function Escalate({
   onSend: () => void;
   onBack: () => void;
   busy: boolean;
-  flash: (msg: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
@@ -34,33 +32,6 @@ export function Escalate({
   const problem = session.diagnosis
     ? session.diagnosis.title.replace("The printer isn't mapped to this device.", "The printer is not configured on this device.").replace(/\.$/, "")
     : "Not yet determined";
-
-  const asText = [
-    `Reported: ${session.description || "No additional description provided."}`,
-    `Device: ${[session.device, session.operatingSystem].filter(Boolean).join(" · ")}`,
-    `Category: ${session.categoryLabel}`,
-    `Assessment: ${problem}`,
-    "",
-    "What we learned",
-    ...session.facts.map((f) => `  ${f.label}: ${f.value}`),
-    "",
-    "Troubleshooting attempted",
-    ...(session.attempts.length
-      ? session.attempts.map((a) => `  ${a.title}`)
-      : ["  (nothing yet)"]),
-    "",
-    "Outcome: Issue still not resolved",
-    `Additional note: ${note.trim() || "None"}`,
-  ].join("\n");
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(asText);
-      flash("Summary copied");
-    } catch {
-      flash("Couldn't copy — select the text and copy it manually");
-    }
-  }
 
   return (
     <>
@@ -81,10 +52,7 @@ export function Escalate({
             <p className="said">Review your request</p>
           </div>
           <div className="summary-actions">
-            <button ref={editButton} className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => setEditing(true)}>Edit</button>
-            {session.facts.length ? <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={onUndo}>Review answers</button> : null}
             <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={onRestart}>Start over</button>
-            <button className="btn btn-plain btn-sm" onClick={copy}><Icon name="copy" size={15} />Copy as text</button>
           </div>
         </div>
 
@@ -92,7 +60,7 @@ export function Escalate({
           <section>
             <div className="summary-row">
               <p className="hlabel">Issue</p>
-              <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => setEditing(true)}>Edit</button>
+              <button ref={editButton} className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => setEditing(true)}>Edit issue details</button>
             </div>
             <p className="said">{session.description || "No additional description provided."}</p>
           </section>
@@ -108,7 +76,7 @@ export function Escalate({
           </section>
 
           <section>
-            <div className="summary-row"><p className="hlabel">What we learned</p></div>
+            <div className="summary-row"><p className="hlabel">What we learned</p>{session.facts.length ? <button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={onUndo}>Review diagnostic answers</button> : null}</div>
             {!session.facts.length ? <p className="hint">No diagnostic facts recorded.</p> : null}
             <dl className="facts">
               {session.facts.map((f, i) => (
@@ -125,29 +93,23 @@ export function Escalate({
           </section>
 
           <section>
-            <div className="summary-row"><p className="hlabel">Supporting image</p><button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => { /* no-op for layout */ }}>Add</button></div>
-            <ImageDraft draft={images} disabled={busy} pickerOnly />
-            {images.images.length ? <div className="image-collection"><ImageDraft draft={images} disabled={busy} previewsOnly /></div> : null}
+            <div className="summary-row"><p className="hlabel">Supporting image (optional)</p></div>
+            <ImageDraft draft={images} disabled={busy} inputLabel="Add screenshot or photo" />
           </section>
 
           <section>
-            <div className="summary-row"><p className="hlabel">Additional note</p><button className="btn btn-plain btn-sm" disabled={busy || editing} onClick={() => {}}>Edit</button></div>
-            <p className="said">{note.trim() || "No note added."}</p>
+            <label className="label" htmlFor="note">Note for IT (optional)</label>
+            <textarea
+              id="note" rows={3} value={note} maxLength={2000}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={busy || editing}
+              aria-describedby="note-help"
+              placeholder="Error message, when it started, or anything else IT should know."
+            />
+            <p id="note-help" className="hint">{authIssue ? "Don’t include passwords or verification codes." : "Keep it brief. Include what changed and any exact error text."}</p>
           </section>
         </div>
       </article>
-
-      <div className="notefield">
-        <label className="label" htmlFor="note">Additional note for IT (optional)</label>
-        <textarea
-          id="note" rows={3} value={note} maxLength={2000}
-          onChange={(e) => setNote(e.target.value)}
-          disabled={busy}
-          aria-describedby="note-help"
-          placeholder="Error message, when it started, or anything else IT should know."
-        />
-        <p id="note-help" className="hint">{authIssue ? "Don’t include passwords or verification codes." : "Keep it brief. Include what changed and any exact error text."}</p>
-      </div>
 
       <div className="review-footer">
         <p className="hint subtle">Nothing is sent until you send it.</p>

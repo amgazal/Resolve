@@ -34,9 +34,9 @@ export function useImageDraft() {
   return { images, busy, error, select, remove, clear };
 }
 export type ImageDraftState = ReturnType<typeof useImageDraft>;
-export function ImageDraft({ draft, disabled = false, initial = false, previewsOnly = false, pickerOnly = false }: { draft: ImageDraftState; disabled?: boolean; initial?: boolean; previewsOnly?: boolean; pickerOnly?: boolean }) {
+export function ImageDraft({ draft, disabled = false, initial = false, previewsOnly = false, pickerOnly = false, inputLabel }: { draft: ImageDraftState; disabled?: boolean; initial?: boolean; previewsOnly?: boolean; pickerOnly?: boolean; inputLabel?: string }) {
   if (!imagesEnabled || initial) return null;
-  const pickerLabel = pickerOnly ? 'Attach image' : 'Supporting image (optional)';
+  const pickerLabel = inputLabel ?? 'Attach image';
   return <div className="image-draft">
     {!previewsOnly ? <>
       <label className="field attachment-picker"><span className="label">{pickerLabel}</span>

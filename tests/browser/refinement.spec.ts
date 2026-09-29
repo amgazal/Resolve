@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-async function enter(page: Page) { await page.goto('./'); await page.getByRole('button', { name: /Requester/ }).click(); }
+async function enter(page: Page) { await page.goto('./'); await page.getByRole('button', { name: /Requester/ }).click(); await page.getByRole('combobox', { name: 'Device', exact: true }).selectOption('Laptop'); await page.getByRole('combobox', { name: 'System', exact: true }).selectOption('macOS'); }
 async function diagnose(page: Page) {
   await page.getByRole('button', { name: 'Wi-Fi & Network' }).click();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
@@ -21,7 +21,7 @@ test('attachment is deferred until final review and landing stays uncluttered', 
   await page.getByRole('button', { name: 'All of them', exact: true }).click();
   await page.getByRole('button', { name: 'Nothing changed', exact: true }).click();
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
-  await expect(page.getByLabel('Attach image')).toHaveCount(1);
+  await expect(page.getByLabel('Add screenshot or photo')).toHaveCount(1);
   await expect(page.locator('.handoff')).toContainText('Review your request');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -33,18 +33,18 @@ test('initial evidence stays local, review edits persist, and a skipped handoff 
   await page.getByLabel('Describe the problem').fill('Wrong description');
   await diagnose(page);
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
-  await expect(page.getByLabel('Attach image')).toBeVisible();
-  await page.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
+  await expect(page.getByLabel('Add screenshot or photo')).toBeVisible();
+  await page.getByLabel('Add screenshot or photo').setInputFiles('tests/fixtures/support.png');
   await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
-  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Edit issue details', exact: true }).click();
   await page.getByLabel('Problem description').fill('Corrected Wi-Fi report');
   await page.locator('.issue-editor').getByRole('combobox', { name: 'Device', exact: true }).selectOption('Phone');
   await page.locator('.issue-editor').getByRole('combobox', { name: 'System', exact: true }).selectOption('iOS');
   await page.getByRole('button', { name: 'Save details' }).click();
-  await expect(page.getByRole('button', { name: 'Edit', exact: true }).first()).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Edit issue details', exact: true })).toBeFocused();
   await expect(page.locator('.handoff')).toContainText('Corrected Wi-Fi report');
   await expect(page.locator('.handoff')).toContainText('Phone · iOS');
-  await page.getByLabel('Additional note for IT (optional)').fill('The exact error appears in the screenshot.');
+  await page.getByLabel('Note for IT (optional)').fill('The exact error appears in the screenshot.');
   await axe(page);
   await page.getByRole('button', { name: 'Send to IT', exact: true }).click();
   await expect(page.getByText('IT will receive your answers and issue details', { exact: false })).toBeVisible();
@@ -65,7 +65,7 @@ test('review removal, invalid files, and confirmed restart release staged images
   await enter(page);
   await diagnose(page);
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
-  const picker = page.getByLabel('Attach image');
+  const picker = page.getByLabel('Add screenshot or photo');
   await picker.setInputFiles({ name: 'bad.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>') });
   await expect(page.getByRole('alert')).toContainText('JPEG, PNG, or WebP');
   await picker.setInputFiles('tests/fixtures/support.png');
@@ -83,11 +83,10 @@ test('review removal, invalid files, and confirmed restart release staged images
 
 test('answer correction clears attempts and lets the requester work backward safely', async ({ page }) => {
   await enter(page); await diagnose(page);
-  await page.getByRole('button', { name: 'Try this', exact: true }).click();
-  await page.getByRole('button', { name: 'Still not working' }).click();
+  await page.getByRole('button', { name: 'Still not working', exact: true }).click();
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'Review answers', exact: true }).click();
+  await page.getByRole('button', { name: 'Review diagnostic answers', exact: true }).click();
   await page.getByRole('button', { name: 'VPN or security tool', exact: true }).click();
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
   await expect(page.locator('.handoff')).toContainText('No troubleshooting attempted');
@@ -139,10 +138,10 @@ test('visual review of changed screens at desktop, tablet, phone and enlarged te
   await expect(page.locator('.step.is-now')).toBeVisible();
   await review('troubleshooting');
   await page.getByRole('button', { name: 'Skip ahead and send this to IT' }).click();
-  await page.getByLabel('Attach image').setInputFiles('tests/fixtures/support.png');
+  await page.getByLabel('Add screenshot or photo').setInputFiles('tests/fixtures/support.png');
   await expect(page.getByRole('button', { name: 'Remove support.png' })).toBeVisible();
   await review('handoff');
-  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Edit issue details', exact: true }).click();
   await review('editing');
   await page.getByRole('button', { name: 'Cancel details edit' }).click();
   await page.getByRole('button', { name: 'Send to IT', exact: true }).click();

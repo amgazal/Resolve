@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TicketDetail } from "@/types";
+import type { AssignableStaff, TicketDetail } from "@/types";
 import { api } from "@/api";
 import { Icon } from "@/components/Icon";
 import { Conversation } from "@/components/Conversation";
@@ -18,6 +18,7 @@ export function TicketPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [staff, setStaff] = useState<AssignableStaff[]>([]);
   const [busy, setBusy] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -40,6 +41,7 @@ export function TicketPanel({
   }, [ticketId, onError]);
 
   useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false; loadGeneration.current++; }; }, [load]);
+  useEffect(() => { api.getAssignableStaff().then(setStaff).catch(() => setStaff([])); }, []);
 
   useEffect(() => {
     previousFocus.current = document.activeElement instanceof HTMLElement
@@ -219,14 +221,17 @@ export function TicketPanel({
 
             <div className="actions">
               {ticket.status !== "resolved" ? <>
-              <button
+              {staff.length > 1 ? <label className="field assignee-field"><span className="label">Assignee</span>
+                <select value={ticket.assigneeId ?? ""} disabled={busy} onChange={(e) => void act(
+                  () => api.assignTicket(ticket.id, e.target.value || null),
+                  e.target.value ? "Assignment updated" : "Ticket unassigned") }>
+                  <option value="">Unassigned</option>
+                  {staff.map(person => <option key={person.id} value={person.id}>{person.fullName}{person.id === ticket.assigneeId ? " (current)" : ""}</option>)}
+                </select>
+              </label> : <button
                 className="btn" disabled={busy || Boolean(ticket.assignee)}
-                onClick={() => act(
-                  () => api.updateTicket(ticket.id, { assignToMe: true, status: "assigned" }),
-                  "Assigned to you")}
-              >
-                Assign to me
-              </button>
+                onClick={() => act(() => api.assignTicket(ticket.id, staff[0]?.id ?? null), "Assigned to you")}
+              >Assign to me</button>}
               {ticket.status === "waiting" && ticket.assignee ? <button className="btn" disabled={busy}
                 onClick={() => act(() => api.updateTicket(ticket.id, { status: "assigned" }), "Work resumed")}>Resume work</button> : null}
               <button
@@ -239,10 +244,10 @@ export function TicketPanel({
               </button>
               </> : <p role="status">Resolved</p>}
               <button
-                className="btn btn-plain" disabled={busy}
+                className="btn btn-plain" disabled={busy || ticket.pathSaved}
                 onClick={() => act(() => api.saveRoute(ticket.id), "Saved to Path Library")}
               >
-                Save to Path Library
+                {ticket.pathSaved ? "✓ Saved to Path Library" : "Save to Path Library"}
               </button>
             </div>
           </div>

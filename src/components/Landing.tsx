@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 export function Landing({
   catalog, description, setDescription, categoryId, setCategoryId,
   device, setDevice, os, setOs, onStart, busy, firstName,
+  suggestedFields,
 }: {
   catalog: Catalog;
   description: string;
@@ -17,6 +18,7 @@ export function Landing({
   onStart: () => void;
   busy: boolean;
   firstName: string;
+  suggestedFields: Set<string>;
 }) {
   return (
     <div className="landing">
@@ -39,7 +41,7 @@ export function Landing({
         </div>
 
         <p className="label label-gap rise" style={{ animationDelay: "190ms" }}>
-          Which of these is closest?
+          Which of these is closest? {suggestedFields.has("category") ? <span className="suggestion-note">Suggested from your description</span> : null}
         </p>
         <div className="cats rise" style={{ animationDelay: "210ms" }}>
           {catalog.categories.map((c) => (
@@ -60,19 +62,23 @@ export function Landing({
           <label className="picker">
             <span>Device</span>
             <select value={device} onChange={(e) => setDevice(e.target.value)}>
+              <option value="">Choose device</option>
               {catalog.devices.map((d) => <option key={d}>{d}</option>)}
             </select>
+            {suggestedFields.has("device") ? <small className="suggestion-note">Suggested from your description</small> : null}
           </label>
           <label className="picker">
             <span>System</span>
             <select value={os} onChange={(e) => setOs(e.target.value)}>
+              <option value="">Choose system</option>
               {catalog.systems.map((s) => <option key={s}>{s}</option>)}
             </select>
+            {suggestedFields.has("os") ? <small className="suggestion-note">Suggested from your description</small> : null}
           </label>
         </div>
 
         <div className="cta rise" style={{ animationDelay: "290ms" }}>
-          <button className="btn btn-primary btn-lg" disabled={!categoryId || busy} onClick={onStart}>
+          <button className="btn btn-primary btn-lg" disabled={!categoryId || !device || !os || busy} onClick={onStart}>
             {busy ? "One moment…" : "Start"}
             {busy ? null : <Icon name="arrow" size={18} />}
           </button>
