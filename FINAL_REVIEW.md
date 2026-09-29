@@ -1,3 +1,98 @@
+# Product-quality refinement — 2026-09-29
+
+Scope: the requested UX pass from baseline `72fdfed`, committed by the user as `4fe78e1`. The user requested that Codex not push; no push or deployment was performed by Codex for this pass.
+
+## 1. Requester request grouping
+
+My requests now shows **Needs your reply** (`waiting`), **With IT** (`new`, `assigned`, `needs_review`), then **Resolved**. Labels are “Sent to IT”, “With IT”, “Needs your reply”, “IT is reviewing your reply”, and “Resolved”. Counts and empty states explain who acts next. Each group sorts newest public activity first, using creation, public messages, and resolution timestamps; internal notes and generic ticket updates are excluded. Opening a request moves keyboard focus to its detail and scrolls there on phone/tablet layouts. Refresh removes a selected request that no longer appears in the authoritative list.
+
+## 2. Confirmation copy
+
+Attempted steps produce a confirmation describing learned facts and tried steps. Skipping with answers mentions answers and issue details; an early handoff mentions only issue details. The existing self-resolved confirmation stays separate. “View my requests” is the primary next action.
+
+## 3. Initial attachments
+
+The shared image draft normalizes JPEG/PNG/WebP locally, retains previews through diagnosis, and allows adding/removing images on the handoff. Limits remain three images and 5 MiB each before/after normalization. Nothing uploads before a ticket exists. After authoritative escalation, the existing private image/message pipeline attaches evidence. Image failure does not undo ticket creation; confirmation explains partial success and My requests provides retry. Clear/restart/sign-out/unmount revoke previews; an asynchronous selection cannot revive a cleared draft. Draft files are tab-local and lost on reload. Demo images remain in memory; the hosted feature gate remains unchanged and disabled until hosted prerequisites are verified.
+
+## 4. Editing
+
+Description, device, and OS can be corrected before escalation. Notes and staged images remain editable. `update_session_details` locks the session, checks authenticated ownership/organization/in-progress state, enforces lengths, and accepts only the three metadata fields. Last-answer rewind uses the server RPC and atomically clears obsolete attempts after UI confirmation. Earlier answers can then be undone one at a time. Category changes explicitly abandon/reset the current session, including notes/images. Failed metadata saves retain edits; save/cancel restore focus after rendering.
+
+## 5. Troubleshooting quality
+
+The built-in library now directs error text, observations, timing, affected devices, and update details to **Additional note for IT**, and provides concise actions, locations, and expected results. MFA clock guidance uses the selected Windows/macOS/iOS/Android/Linux setting path; fresh-code guidance distinguishes service resend from authenticator rotation; backup guidance explains already-registered alternatives. Authentication copy prohibits passwords, verification codes, and recovery codes in Resolve. Other refinements cover network/browser comparisons, managed software, storage, printer queues, updates, and device checks.
+
+A small presentation overlay uses stable built-in diagnosis keys and step positions. Unknown authored diagnoses keep stored copy. Historical database wording and attempt titles are untouched, and no seed was run. Maintainers must preserve the built-in semantic step order.
+
+Clock paths were checked against official [Microsoft](https://support.microsoft.com/en-us/windows/experience/personalization/set-time-date-and-time-zone-settings-in-windows), [Apple macOS](https://support.apple.com/en-nz/guide/mac-help/mchlp2996/26/mac/26), [Apple iOS](https://support.apple.com/en-ie/101619), and [Android](https://support.google.com/android/answer/2841106?hl=en-ca) documentation. Manufacturer/managed-setting differences are acknowledged in the UI.
+
+## 6. UI/UX
+
+Paper, white cards, spruce, Newsreader, Inter, and IBM Plex Mono are preserved. Current steps, selection, and handoff cards have stronger hierarchy. A restrained warm requester action group is separate from technical severity; resolved work stays quieter. IT Needs review sorts first, and the panel states the next action plus latest requester message time. The empty troubleshooting summary no longer has a misleading checkmark. Medium-priority text was darkened after an axe contrast finding; the admin version selector now fits at enlarged text sizes.
+
+Screenshots were actually inspected for landing with images, diagnostic question, active step, handoff/editing, confirmation, grouped requests/action-needed state, IT queue/panel, and admin at 390/768/1440px. Automated overflow checks additionally cover 320/375/393/430/1024/1280 and 844×390 landscape. Representative screens pass axe and 200% computed text-size checks. Screenshot artifacts are generated by `tests/browser/refinement.spec.ts` under ignored `test-results/`.
+
+## 7. Security
+
+No broad table write policies, role/org trust, public Storage, or browser privileged credentials were introduced. Diagnostic traversal and ticket/message/image mutations stay authoritative. The forward migration only adds constrained metadata editing, safe rewind, and a public-only requester projection. Local authenticated tests cover cross-user/org/anonymous denial and private-note exclusion. The built-JavaScript scan found zero `sb_secret_` credentials or service-role JWTs. No hosted database was changed.
+
+## 8. Other demonstrated bugs fixed
+
+- Obsolete troubleshooting attempts after answer correction.
+- Misleading no-attempt confirmation/checkmark.
+- Async staged-image cleanup and partial-upload recovery.
+- Focus restoration after issue editing and phone request selection.
+- Stale selected detail when the authoritative request list loses the ticket.
+- Admin selector overflow at 200% text and selected-row priority contrast.
+
+## 9. Test results
+
+| Command | Result | Count / scope |
+| --- | --- | --- |
+| `npm ci` | PASS | Lockfile installation |
+| `npm audit` | PASS | 0 vulnerabilities |
+| `npm run check` | PASS | TypeScript, 34 unit tests, production build |
+| `npm run test:browser` | PASS | 15 scenarios; axe, responsive screenshots, 200% text |
+| `npm run test:paths` | PASS | 2 root/subpath hard-refresh scenarios |
+| `npx supabase migration up --local` | PASS | New forward migration applied locally |
+| `npx supabase db lint --level warning` | PASS | No schema errors |
+| `npx supabase test db` | PASS | 50 pgTAP assertions |
+| `npm run test:integration` | PASS | 159 authenticated role/workflow/image assertions |
+| `npm run test:browser:live` | PASS | 7 local live scenarios, including partial upload, failed edit, stale selection |
+| `npm run test:production -- --max-failures=1` | PASS | All 15 scenarios completed on the canonical domain |
+| Additional production Chromium check | PASS | Root/reload/assets, self-resolved confirmation, zero console/network failures |
+| Privileged-key scan | PASS | Zero matches in local and deployed JavaScript |
+| Hosted authenticated backend checks | NOT RUN | Management access/configuration unavailable |
+
+Final browser/live/path suites were rerun after the focus and stale-selection fixes. Initial exploratory runs found and led to fixes for contrast and text overflow; selectors used for screenshot timing were corrected. A one-off production check initially used an overly exact category selector; its corrected run passed. The earlier denied execution commands were resumed after the user requested continuation. No push was performed.
+
+## 10. Production verification
+
+The current public site already contains the user’s commit `4fe78e160a0f4e964b3e92ab4f321c86492a33c0`. GitHub reports successful completion of [Pages run 36563984201](https://github.com/amgazal/Resolve/actions/runs/36563984201) for that SHA. Codex only read its status and tested the site; it did not push or initiate deployment.
+
+All 15 demo browser scenarios passed on [https://resolve.amgazal.com](https://resolve.amgazal.com/), covering requester handoff/editing/staged images, grouping/replies, OS guidance, technician/admin workflows, accessibility, mobile widths and enlarged text. A separate Chromium check passed root load, hard refresh, self-resolved “That’s sorted” confirmation, and asset loading with zero console exceptions/errors or failed HTTP/network requests. The deployed module `./assets/index-D9m1ShAd.js` returned 200 and contained no privileged-key signatures. These are demo-production results, not verification of persistent hosted accounts or uploads.
+
+## 11. Files changed
+
+- Flow/UI: `src/App.tsx`; Landing, Fix, Escalate, Closing, MyRequests, Conversation; new ImageDraft and IssueDetailsEditor; `src/styles/resolve.css`.
+- IT: `src/technician/ITDesk.tsx`, `TicketPanel.tsx`.
+- Contracts/adapters/content: `src/types.ts`, `src/api/client.ts`, `mockApi.ts`, new requesterPresentation, `src/data/diagnoses.ts`, new guidance.
+- Database: `supabase/migrations/20260930000100_requester_refinement.sql`.
+- Tests: mock/requester presentation unit tests, browser smoke/refinement, integration roles, live recovery.
+- Documentation: README, DEPLOYMENT, this review. The user commit also includes generated `tsconfig.tsbuildinfo`.
+
+## 12. Remaining limitations
+
+Hosted Supabase management access was unavailable (`supabase projects list`: no access token); the public deployment was previously demo mode. Hosted migrations, private Storage/function deployment, cleanup, and persistent hosted uploads are not verified. Keep the gate disabled. Local live testing does not establish hosted readiness. Staged images and unsent notes are lost on reload; successful live tickets/images persist. Guidance overlays rely on stable built-in step positions; historical attempt titles remain stored values. Browser coverage is Chromium, including simulated 200% text enlargement, not native zoom/Safari/Firefox/physical-device certification. Existing pagination limits and image-normalization limits from the previous review remain.
+
+## 13. Final status
+
+**VERIFIED — no known release-blocking defects found** in this UX/demo release and the local backend checks.
+
+Hosted persistent operation remains **not verified**, with uploads gated as required. This does not claim hosted readiness or that the product is bug free.
+
+---
+
 # Release pass — 2026-09-29
 
 **NOT VERIFIED — hosted Supabase is not connected or accessible for migration, Storage, function, cleanup, or authenticated production verification.** Local checks below pass; the custom-domain static/demo deployment also passes the production checks below. Historical review notes remain below.
